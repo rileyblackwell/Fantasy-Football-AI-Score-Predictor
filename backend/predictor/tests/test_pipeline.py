@@ -85,3 +85,14 @@ class RefreshCommandTests(TestCase):
         log = RefreshLog.objects.get()
         self.assertFalse(log.success)
         self.assertIn("nflverse down", log.message)
+
+
+class DeploySetupTests(TestCase):
+    def test_deploy_setup_migrates_and_skips_refresh_when_model_exists(self):
+        populate_db()
+        run_pipeline(num_rounds=5)
+        out = StringIO()
+        with mock.patch("predictor.management.commands.refresh.ingest") as ingest:
+            call_command("deploy_setup", stdout=out)
+        ingest.assert_not_called()
+        self.assertIn("skipping", out.getvalue())

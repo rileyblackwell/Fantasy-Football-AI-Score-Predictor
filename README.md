@@ -63,7 +63,7 @@ The root `Dockerfile` builds the Vue app and the Django image. One project holds
 
 | Service | Start command | Notes |
 | --- | --- | --- |
-| `web` | Dockerfile default (gunicorn) | Pre-deploy: `python manage.py migrate && python manage.py refresh --if-empty`. Healthcheck `/api/health`. Serverless sleep on. |
+| `web` | Dockerfile default (gunicorn) | Pre-deploy: `python manage.py deploy_setup` (migrate, then load data and train if the DB is empty). Healthcheck `/api/health`. Serverless sleep on. |
 | `refresh` | `python manage.py refresh` | Same image, cron `0 11 * * *` (daily, 11:00 UTC). Runs ~20s at ~0.5 GB, then exits. |
 | `Postgres` | Railway template | `DATABASE_URL` is referenced by both app services. |
 
