@@ -24,7 +24,7 @@ class ApiTests(TestCase):
     def test_summary(self):
         data = self.client.get("/api/summary").json()
         self.assertEqual((data["season"], data["week"]), (2025, 4))
-        self.assertEqual(data["positions"], ["QB", "RB", "WR", "TE"])
+        self.assertEqual(data["positions"], ["QB", "RB", "WR", "TE", "DST"])
         self.assertIn("model_mae", data["model"]["metrics"])
         self.assertTrue(data["model"]["feature_importance"])
         self.assertIn({"season": 2025, "week": 4, "is_backtest": False}, data["weeks"])
@@ -81,3 +81,24 @@ class SpaTests(TestCase):
             res = self.client.get("/about")
         self.assertEqual(res.status_code, 404)
         self.assertIn("Frontend not built", res.json()["detail"])
+
+
+class AccuracyApiTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        populate_db()
+        run_pipeline(num_rounds=10)
+
+    def test_accuracy_compares_past_predictions_with_actuals(self):
+        data = self.client.get("/api/accuracy").json()
+        self.assertEqual(data["season"], 2025)
+        self.assertEqual([w["week"] for w in data["weeks"]], [1, 2, 3])
+        self.assertEqual(data["overall"]["games"], 60)
+        self.assertGreaterEqual(data["overall"]["mae"], 0)
+        self.assertIn("DST", data["by_position"])
+        self.assertLessEqual(len(data["biggest_misses"]), 5)
+
+    def test_dst_player_detail_has_defense_line(self):
+        data = self.client.get("/api/players/DST-AAA").json()
+        self.assertEqual(data["position"], "DST")
+        self.assertIn("pts allowed", data["weeks"][0]["line"]["dst"])

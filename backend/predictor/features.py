@@ -30,6 +30,7 @@ FEATURES = [
     "position_code",
     "is_home",
     "implied_team_total",
+    "opp_implied_total",
     "team_spread",
     "game_total",
     "ppr_last1",
@@ -72,6 +73,7 @@ def team_games(games: pd.DataFrame) -> pd.DataFrame:
             "team_spread": spread,
             "game_total": total,
             "implied_team_total": (total + spread) / 2,
+            "opp_implied_total": (total - spread) / 2,
         }
     )
     away = pd.DataFrame(
@@ -84,6 +86,7 @@ def team_games(games: pd.DataFrame) -> pd.DataFrame:
             "team_spread": -spread,
             "game_total": total,
             "implied_team_total": (total - spread) / 2,
+            "opp_implied_total": (total + spread) / 2,
         }
     )
     return pd.concat([home, away], ignore_index=True)

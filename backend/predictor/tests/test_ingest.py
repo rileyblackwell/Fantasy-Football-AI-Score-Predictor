@@ -113,3 +113,51 @@ class CleanOtherTests(TestCase):
         self.assertEqual(current_season(date(2026, 8, 31)), 2025)
         self.assertEqual(current_season(date(2026, 9, 1)), 2026)
         self.assertEqual(current_season(date(2027, 1, 15)), 2026)
+
+
+class DefenseTests(TestCase):
+    def test_points_allowed_tiers(self):
+        from predictor.ingest import points_allowed_score
+
+        self.assertEqual([points_allowed_score(p) for p in (0, 6, 13, 20, 27, 34, 35)], [10, 7, 4, 1, 0, -1, -4])
+
+    def test_clean_dst_stats_scores_team_defense(self):
+        from predictor.ingest import clean_dst_stats
+
+        team_stats = pd.DataFrame(
+            [
+                {"season": 2025, "week": 1, "season_type": "REG", "team": "OAK", "opponent_team": "KC",
+                 "def_sacks": 3.0, "def_interceptions": 1, "fumble_recovery_opp": 1, "def_tds": 1,
+                 "special_teams_tds": 0, "def_safeties": 0, "def_punt_blocks": 0, "def_fg_blocks": 1},
+                {"season": 2025, "week": 1, "season_type": "POST", "team": "KC", "opponent_team": "LV",
+                 "def_sacks": 9.0},
+            ]
+        )
+        schedule = pd.DataFrame(
+            [{"season": 2025, "week": 1, "home_team": "LV", "away_team": "KC", "home_score": 24, "away_score": 10}]
+        )
+        teams = pd.DataFrame([{"abbr": "LV", "name": "Las Vegas Raiders", "logo_url": "http://logo"}])
+        df = clean_dst_stats(team_stats, schedule, teams)
+        self.assertEqual(len(df), 1)
+        row = df.iloc[0]
+        self.assertEqual((row["player_id"], row["name"], row["position"]), ("DST-LV", "Las Vegas Raiders D/ST", "DST"))
+        self.assertEqual(row["points_allowed"], 10)
+        # 3 sacks + 2 INT + 2 FR + 6 TD + 2 block + 4 (10 points allowed) = 19
+        self.assertEqual(row["fantasy_points_ppr"], 19.0)
+        self.assertEqual(row["fantasy_points_std"], 19.0)
+
+
+class TeamTests(TestCase):
+    def test_relocated_franchise_keeps_current_name(self):
+        from predictor.ingest import clean_teams
+
+        raw = pd.DataFrame(
+            [
+                {"team_abbr": "LA", "team_name": "Los Angeles Rams", "team_nick": "Rams", "team_color": "#003594",
+                 "team_color2": "#FFD100", "team_logo_espn": "http://la"},
+                {"team_abbr": "STL", "team_name": "St. Louis Rams", "team_nick": "Rams", "team_color": "#000",
+                 "team_color2": "#fff", "team_logo_espn": "http://stl"},
+            ]
+        )
+        df = clean_teams(raw)
+        self.assertEqual(df[["abbr", "name"]].values.tolist(), [["LA", "Los Angeles Rams"]])

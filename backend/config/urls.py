@@ -8,6 +8,7 @@ urlpatterns = [
     path("api/health", views.health),
     path("api/summary", views.summary),
     path("api/predictions", views.predictions),
+    path("api/accuracy", views.accuracy),
     path("api/players/<str:player_id>", views.player_detail),
     re_path(r"^(?!api/|admin/|static/).*$", views.spa),
 ]

@@ -12,7 +12,7 @@ from datetime import date
 import pandas as pd
 from django.db import transaction
 
-from .models import POSITIONS, Game, InjuryReport, Player, WeeklyStat
+from .models import DST_PREFIX, POSITIONS, Game, InjuryReport, Player, Team, WeeklyStat
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,11 @@ STAT_COLUMNS = {
     "receiving_yards": "receiving_yards",
     "receiving_tds": "receiving_tds",
 }
+
+DST_COLUMNS = [
+    "def_sacks", "def_interceptions", "def_fumble_recoveries", "def_tds", "def_safeties", "def_blocked_kicks",
+    "points_allowed",
+]
 
 # Ordered from most to least severe, used to keep the worst designation in a week.
 INJURY_SEVERITY = {"Out": 0, "Doubtful": 1, "Questionable": 2}
@@ -70,12 +75,111 @@ def clean_weekly_stats(raw: pd.DataFrame) -> pd.DataFrame:
     df["headshot_url"] = df.get("headshot_url", pd.Series(index=df.index, dtype=object)).fillna("")
     # A player can only play once per week; if nflverse ever duplicates a row keep the bigger line.
     df = df.sort_values("fantasy_points_ppr", ascending=False).drop_duplicates(["player_id", "season", "week"])
-    cols = (
-        ["player_id", "name", "position", "headshot_url", "season", "week", "team", "opponent"]
-        + list(STAT_COLUMNS.values())
-        + ["target_share", "fantasy_points_std", "fantasy_points_ppr"]
+    for col in DST_COLUMNS:
+        df[col] = None if col == "points_allowed" else 0
+    return df[STAT_FRAME_COLUMNS].sort_values(["season", "week", "player_id"]).reset_index(drop=True)
+
+
+STAT_FRAME_COLUMNS = (
+    ["player_id", "name", "position", "headshot_url", "season", "week", "team", "opponent"]
+    + list(STAT_COLUMNS.values())
+    + ["target_share"]
+    + DST_COLUMNS
+    + ["fantasy_points_std", "fantasy_points_ppr"]
+)
+
+
+def points_allowed_score(points_allowed: float) -> int:
+    """Common (ESPN-style) D/ST points-allowed tiers."""
+    if points_allowed == 0:
+        return 10
+    if points_allowed <= 6:
+        return 7
+    if points_allowed <= 13:
+        return 4
+    if points_allowed <= 20:
+        return 1
+    if points_allowed <= 27:
+        return 0
+    if points_allowed <= 34:
+        return -1
+    return -4
+
+
+def dst_fantasy_points(row) -> float:
+    return float(
+        row["def_sacks"]
+        + 2 * row["def_interceptions"]
+        + 2 * row["def_fumble_recoveries"]
+        + 6 * row["def_tds"]
+        + 2 * row["def_safeties"]
+        + 2 * row["def_blocked_kicks"]
+        + points_allowed_score(row["points_allowed"])
     )
-    return df[cols].sort_values(["season", "week", "player_id"]).reset_index(drop=True)
+
+
+def clean_dst_stats(team_stats: pd.DataFrame, schedule: pd.DataFrame, teams: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Turn nflverse team-level weekly stats into one D/ST "player" row per team-game.
+
+    ``schedule`` must already be cleaned; points allowed come from the final score.
+    """
+    df = team_stats[team_stats["season_type"] == "REG"].copy()
+    df["team"] = fix_team(df["team"])
+    df["opponent"] = fix_team(df["opponent_team"])
+
+    def num(col):
+        return pd.to_numeric(df[col], errors="coerce").fillna(0) if col in df else 0
+
+    df["def_sacks"] = num("def_sacks")
+    df["def_interceptions"] = num("def_interceptions").astype(int)
+    df["def_fumble_recoveries"] = num("fumble_recovery_opp").astype(int)
+    df["def_tds"] = (num("def_tds") + num("special_teams_tds")).astype(int)
+    df["def_safeties"] = num("def_safeties").astype(int)
+    df["def_blocked_kicks"] = (num("def_punt_blocks") + num("def_fg_blocks")).astype(int)
+
+    scores = pd.concat(
+        [
+            schedule.rename(columns={"home_team": "team", "away_score": "points_allowed"})[
+                ["season", "week", "team", "points_allowed"]
+            ],
+            schedule.rename(columns={"away_team": "team", "home_score": "points_allowed"})[
+                ["season", "week", "team", "points_allowed"]
+            ],
+        ]
+    )
+    df = df.merge(scores, on=["season", "week", "team"], how="inner")
+    df = df[df["points_allowed"].notna()]
+    df["points_allowed"] = df["points_allowed"].astype(int)
+    df["fantasy_points_std"] = df.apply(dst_fantasy_points, axis=1)
+    df["fantasy_points_ppr"] = df["fantasy_points_std"]
+
+    names = {}
+    logos = {}
+    if teams is not None and len(teams):
+        names = dict(zip(teams["abbr"], teams["name"]))
+        logos = dict(zip(teams["abbr"], teams["logo_url"]))
+    df["player_id"] = DST_PREFIX + df["team"]
+    df["name"] = df["team"].map(lambda t: f"{names.get(t, t)} D/ST")
+    df["position"] = "DST"
+    df["headshot_url"] = df["team"].map(lambda t: logos.get(t, ""))
+    for col in STAT_COLUMNS.values():
+        df[col] = 0
+    df["target_share"] = None
+    df = df.drop_duplicates(["player_id", "season", "week"])
+    return df[STAT_FRAME_COLUMNS].sort_values(["season", "week", "player_id"]).reset_index(drop=True)
+
+
+def clean_teams(raw: pd.DataFrame) -> pd.DataFrame:
+    df = raw.copy()
+    df["abbr"] = fix_team(df["team_abbr"])
+    # nflverse also lists relocated franchises (STL, SD, OAK); keep the current team's row.
+    df["_current"] = df["abbr"] == df["team_abbr"]
+    df = df.sort_values("_current").drop_duplicates("abbr", keep="last")
+    df = df.rename(
+        columns={"team_name": "name", "team_nick": "nickname", "team_color": "color", "team_color2": "color2",
+                 "team_logo_espn": "logo_url"}
+    )
+    return df[["abbr", "name", "nickname", "color", "color2", "logo_url"]].fillna("").reset_index(drop=True)
 
 
 def clean_schedule(raw: pd.DataFrame) -> pd.DataFrame:
@@ -125,6 +229,15 @@ def _nfl():
 
 def load_weekly_stats(seasons: list[int]) -> pd.DataFrame:
     return clean_weekly_stats(_nfl().load_player_stats(seasons, summary_level="week").to_pandas())
+
+
+def load_teams() -> pd.DataFrame:
+    return clean_teams(_nfl().load_teams().to_pandas())
+
+
+def load_dst_stats(seasons: list[int], schedule: pd.DataFrame, teams: pd.DataFrame) -> pd.DataFrame:
+    raw = _nfl().load_team_stats(seasons, summary_level="week").to_pandas()
+    return clean_dst_stats(raw, schedule, teams)
 
 
 def load_schedule(seasons: list[int]) -> pd.DataFrame:
@@ -182,6 +295,13 @@ def store_weekly_stats(stats: pd.DataFrame, seasons: list[int]) -> int:
             opponent=r.opponent,
             position=r.position,
             target_share=_none_if_nan(r.target_share),
+            def_sacks=r.def_sacks,
+            def_interceptions=r.def_interceptions,
+            def_fumble_recoveries=r.def_fumble_recoveries,
+            def_tds=r.def_tds,
+            def_safeties=r.def_safeties,
+            def_blocked_kicks=r.def_blocked_kicks,
+            points_allowed=_none_if_nan(r.points_allowed),
             fantasy_points_std=r.fantasy_points_std,
             fantasy_points_ppr=r.fantasy_points_ppr,
             **{col: getattr(r, col) for col in STAT_COLUMNS.values()},
@@ -189,7 +309,21 @@ def store_weekly_stats(stats: pd.DataFrame, seasons: list[int]) -> int:
         for r in stats.itertuples()
     ]
     WeeklyStat.objects.bulk_create(rows, batch_size=2000)
+    # Team defenses are always "active".
+    Player.objects.filter(position="DST").update(roster_status="ACT")
     return len(rows)
+
+
+@transaction.atomic
+def store_teams(teams: pd.DataFrame) -> int:
+    objs = [Team(**row) for row in teams.to_dict("records")]
+    Team.objects.bulk_create(
+        objs,
+        update_conflicts=True,
+        unique_fields=["abbr"],
+        update_fields=["name", "nickname", "color", "color2", "logo_url"],
+    )
+    return len(objs)
 
 
 @transaction.atomic
@@ -259,9 +393,12 @@ def store_injuries(injuries: pd.DataFrame, season: int) -> int:
 def ingest(seasons: list[int]) -> dict:
     """Download and store everything for the given seasons. Rosters/injuries only matter for the latest."""
     latest = max(seasons)
-    stats = load_weekly_stats(seasons)
+    teams = load_teams()
+    store_teams(teams)
+    schedule = load_schedule(seasons)
+    stats = pd.concat([load_weekly_stats(seasons), load_dst_stats(seasons, schedule, teams)], ignore_index=True)
     n_stats = store_weekly_stats(stats, seasons)
-    n_games = store_schedule(load_schedule(seasons))
+    n_games = store_schedule(schedule)
     n_roster = store_rosters(load_rosters(latest))
     n_inj = store_injuries(load_injuries(latest), latest)
     summary = {"stats": n_stats, "games": n_games, "roster_players": n_roster, "injuries": n_inj}

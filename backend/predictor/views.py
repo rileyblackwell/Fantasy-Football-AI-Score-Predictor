@@ -5,7 +5,7 @@ from django.http import FileResponse, Http404, JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import POSITIONS, InjuryReport, ModelRun, Player, Prediction, RefreshLog, WeeklyStat
+from .models import POSITIONS, InjuryReport, ModelRun, Player, Prediction, RefreshLog, Team, WeeklyStat
 
 SCORING = {"ppr": "points_ppr", "half": "points_half", "std": "points_std"}
 
@@ -49,6 +49,10 @@ def summary(request):
             "week": default[1] if default else None,
             "weeks": weeks,
             "positions": POSITIONS,
+            "teams": {
+                t.abbr: {"name": t.name, "nickname": t.nickname, "color": t.color, "color2": t.color2, "logo_url": t.logo_url}
+                for t in Team.objects.all()
+            },
             "last_refreshed": refresh.finished_at if refresh else (run.created_at if run else None),
             "model": None
             if run is None
@@ -145,6 +149,8 @@ def player_detail(request, player_id: str):
                 "line": None
                 if s is None
                 else {
+                    "dst": f"{s.def_sacks:g} sacks, {s.def_interceptions} INT, {s.def_fumble_recoveries} FR, "
+                    f"{s.def_tds} TD, {s.points_allowed if s.points_allowed is not None else '?'} pts allowed",
                     "pass": f"{s.completions}/{s.attempts}, {s.passing_yards} yds, {s.passing_tds} TD, {s.interceptions} INT",
                     "rush": f"{s.carries} car, {s.rushing_yards} yds, {s.rushing_tds} TD",
                     "rec": f"{s.receptions}/{s.targets}, {s.receiving_yards} yds, {s.receiving_tds} TD",
@@ -164,6 +170,80 @@ def player_detail(request, player_id: str):
             "games_played": len(season_totals),
             "season_avg": round(sum(season_totals) / len(season_totals), 1) if season_totals else None,
             "weeks": weeks,
+        }
+    )
+
+
+@api_view(["GET"])
+def accuracy(request):
+    """How past projections compared with what actually happened (PPR scoring)."""
+    default = _default_week()
+    try:
+        season = int(request.query_params.get("season", default[0] if default else 0))
+    except ValueError:
+        return Response({"detail": "season must be an integer"}, status=400)
+
+    actuals = {
+        (s["player_id"], s["week"]): s["fantasy_points_ppr"]
+        for s in WeeklyStat.objects.filter(season=season).values("player_id", "week", "fantasy_points_ppr")
+    }
+    preds = Prediction.objects.filter(season=season).select_related("player")
+    pairs = []
+    for p in preds:
+        actual = actuals.get((p.player_id, p.week))
+        if actual is None:
+            continue
+        pairs.append(
+            {
+                "week": p.week,
+                "position": p.player.position,
+                "name": p.player.name,
+                "player_id": p.player_id,
+                "team": p.team,
+                "projected": p.points_ppr,
+                "actual": actual,
+                "baseline": p.recent_avg_ppr,
+                "live": not p.is_backtest,
+            }
+        )
+
+    def summarize(rows):
+        if not rows:
+            return None
+        errors = [abs(r["projected"] - r["actual"]) for r in rows]
+        with_base = [r for r in rows if r["baseline"] is not None]
+        return {
+            "games": len(rows),
+            "mae": round(sum(errors) / len(errors), 2),
+            "within_5": round(sum(e <= 5 for e in errors) / len(errors), 3),
+            "baseline_mae": round(sum(abs(r["baseline"] - r["actual"]) for r in with_base) / len(with_base), 2)
+            if with_base
+            else None,
+            "live_games": sum(r["live"] for r in rows),
+        }
+
+    weeks = []
+    for week in sorted({r["week"] for r in pairs}):
+        summary_row = summarize([r for r in pairs if r["week"] == week])
+        weeks.append({"week": week, **summary_row})
+    by_position = {pos: summarize([r for r in pairs if r["position"] == pos]) for pos in POSITIONS}
+    # Best calls: projected 15+ and landed within 2 points. Biggest misses: largest absolute error.
+    best = sorted(
+        (r for r in pairs if r["projected"] >= 15 and abs(r["projected"] - r["actual"]) <= 2),
+        key=lambda r: -r["actual"],
+    )[:5]
+    misses = sorted(pairs, key=lambda r: -abs(r["projected"] - r["actual"]))[:5]
+    for r in best + misses:
+        r["projected"] = round(r["projected"], 1)
+        r["actual"] = round(r["actual"], 1)
+    return Response(
+        {
+            "season": season,
+            "overall": summarize(pairs),
+            "weeks": weeks,
+            "by_position": {k: v for k, v in by_position.items() if v},
+            "best_calls": best,
+            "biggest_misses": misses,
         }
     )
 

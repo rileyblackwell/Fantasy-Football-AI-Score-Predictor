@@ -23,9 +23,9 @@ class PipelineTests(TestCase):
         self.assertEqual(run.metrics["holdout_season"], 2024)
         self.assertIn("model_mae", run.metrics)
         upcoming = Prediction.objects.filter(season=2025, week=4)
-        self.assertEqual(upcoming.count(), 16)  # 4 teams x 4 positions, all play in week 4
+        self.assertEqual(upcoming.count(), 20)  # 4 teams x (4 positions + D/ST), all play in week 4
         self.assertFalse(upcoming.filter(is_backtest=True).exists())
-        self.assertEqual(Prediction.objects.filter(season=2025, is_backtest=True).count(), 16 * 3)
+        self.assertEqual(Prediction.objects.filter(season=2025, is_backtest=True).count(), 20 * 3)
         p = upcoming.first()
         self.assertGreaterEqual(p.points_ppr, 0)
         self.assertAlmostEqual(p.points_half, (p.points_ppr + p.points_std) / 2, places=1)
@@ -40,7 +40,7 @@ class PipelineTests(TestCase):
         for _ in range(7):
             run_pipeline(num_rounds=5)
         self.assertEqual(ModelRun.objects.count(), 5)
-        self.assertEqual(Prediction.objects.filter(season=2025, week=4).count(), 16)
+        self.assertEqual(Prediction.objects.filter(season=2025, week=4).count(), 20)
 
     def test_inactive_players_are_not_projected(self):
         from predictor.models import Player
@@ -96,3 +96,26 @@ class DeploySetupTests(TestCase):
             call_command("deploy_setup", stdout=out)
         ingest.assert_not_called()
         self.assertIn("skipping", out.getvalue())
+
+
+class LivePredictionTests(TestCase):
+    def test_published_predictions_survive_after_the_game_is_played(self):
+        from predictor.ingest import store_schedule, store_weekly_stats
+        from predictor.tests.factories import schedule, weekly_stats
+
+        populate_db()
+        run_pipeline(num_rounds=5)
+        live = {p.player_id: p.points_ppr for p in Prediction.objects.filter(season=2025, week=4)}
+        self.assertTrue(live)
+
+        # Week 4 gets played; the next refresh targets week 5.
+        games = schedule((2023, 2024, 2025), 6, played_through=(2025, 4))
+        store_weekly_stats(weekly_stats(games), [2023, 2024, 2025])
+        store_schedule(games)
+        run_pipeline(num_rounds=5)
+
+        week4 = Prediction.objects.filter(season=2025, week=4)
+        self.assertFalse(week4.filter(is_backtest=True).exists())
+        self.assertEqual({p.player_id: p.points_ppr for p in week4}, live)
+        self.assertTrue(Prediction.objects.filter(season=2025, week=5, is_backtest=False).exists())
+        self.assertTrue(Prediction.objects.filter(season=2025, week=1, is_backtest=True).exists())

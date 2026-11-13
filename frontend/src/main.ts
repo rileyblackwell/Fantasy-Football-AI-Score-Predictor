@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/', name: 'rankings', component: RankingsView },
     { path: '/players/:id', name: 'player', component: () => import('./views/PlayerView.vue') },
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue') },
+    { path: '/accuracy', name: 'accuracy', component: () => import('./views/AccuracyView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

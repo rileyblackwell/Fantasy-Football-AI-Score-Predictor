@@ -36,11 +36,26 @@ def schedule(seasons, weeks, played_through=None):
 
 def weekly_stats(games: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    base = {"QB": 18, "RB": 12, "WR": 11, "TE": 7}
+    base = {"QB": 18, "RB": 12, "WR": 11, "TE": 7, "DST": 7}
     rows = []
     for g in games[games["home_score"].notna()].itertuples():
         for team, opp in [(g.home_team, g.away_team), (g.away_team, g.home_team)]:
             for pos in POSITIONS:
+                if pos == "DST":
+                    pts = round(float(rng.normal(7, 4)), 2)
+                    rows.append(
+                        {
+                            "player_id": f"DST-{team}", "name": f"{team} D/ST", "position": "DST",
+                            "headshot_url": "", "season": g.season, "week": g.week, "team": team, "opponent": opp,
+                            **{c: 0 for c in ["completions", "attempts", "passing_yards", "passing_tds", "interceptions",
+                                              "carries", "rushing_yards", "rushing_tds", "targets", "receptions",
+                                              "receiving_yards", "receiving_tds"]},
+                            "target_share": None, "def_sacks": 2.0, "def_interceptions": 1, "def_fumble_recoveries": 0,
+                            "def_tds": 0, "def_safeties": 0, "def_blocked_kicks": 0, "points_allowed": 20,
+                            "fantasy_points_std": pts, "fantasy_points_ppr": pts,
+                        }
+                    )
+                    continue
                 ppr = max(0.0, base[pos] + TEAMS.index(team) + rng.normal(0, 3))
                 rec = 0 if pos == "QB" else int(rng.integers(1, 8))
                 rows.append(
@@ -66,6 +81,8 @@ def weekly_stats(games: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
                         "receiving_yards": rec * 10,
                         "receiving_tds": 0,
                         "target_share": 0.1 * rec / 4,
+                        "def_sacks": 0, "def_interceptions": 0, "def_fumble_recoveries": 0, "def_tds": 0,
+                        "def_safeties": 0, "def_blocked_kicks": 0, "points_allowed": None,
                         "fantasy_points_std": round(ppr - rec, 2),
                         "fantasy_points_ppr": round(ppr, 2),
                     }

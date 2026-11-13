@@ -12,7 +12,16 @@ export interface PositionMetric {
   baseline_mae: number
 }
 
+export interface TeamInfo {
+  name: string
+  nickname: string
+  color: string
+  color2: string
+  logo_url: string
+}
+
 export interface Summary {
+  teams: Record<string, TeamInfo>
   season: number | null
   week: number | null
   weeks: WeekRef[]
@@ -66,7 +75,7 @@ export interface PlayerWeek {
   projected: number | null
   is_backtest: boolean | null
   injury_status: string | null
-  line: null | { pass: string; rush: string; rec: string }
+  line: null | { pass: string; rush: string; rec: string; dst: string }
 }
 
 export interface PlayerDetail {
@@ -80,6 +89,35 @@ export interface PlayerDetail {
   games_played: number
   season_avg: number | null
   weeks: PlayerWeek[]
+}
+
+export interface AccuracyPick {
+  week: number
+  position: string
+  name: string
+  player_id: string
+  team: string
+  projected: number
+  actual: number
+  baseline: number | null
+  live: boolean
+}
+
+export interface AccuracySummary {
+  games: number
+  mae: number
+  within_5: number
+  baseline_mae: number | null
+  live_games: number
+}
+
+export interface Accuracy {
+  season: number
+  overall: AccuracySummary | null
+  weeks: (AccuracySummary & { week: number })[]
+  by_position: Record<string, AccuracySummary>
+  best_calls: AccuracyPick[]
+  biggest_misses: AccuracyPick[]
 }
 
 async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
@@ -97,5 +135,6 @@ export const api = {
   summary: () => get<Summary>('summary'),
   predictions: (params: { season?: number; week?: number; scoring: Scoring; position?: string; search?: string }) =>
     get<PredictionsResponse>('predictions', params),
+  accuracy: () => get<Accuracy>('accuracy'),
   player: (id: string, scoring: Scoring) => get<PlayerDetail>(`players/${encodeURIComponent(id)}`, { scoring }),
 }

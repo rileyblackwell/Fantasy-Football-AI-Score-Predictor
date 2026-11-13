@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Game, InjuryReport, ModelRun, Player, Prediction, RefreshLog, WeeklyStat
+from .models import Team, Game, InjuryReport, ModelRun, Player, Prediction, RefreshLog, WeeklyStat
 
 
 @admin.register(Player)
@@ -39,3 +39,4 @@ class RefreshLogAdmin(admin.ModelAdmin):
 
 admin.site.register(Game)
 admin.site.register(InjuryReport)
+admin.site.register(Team)

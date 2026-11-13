@@ -130,13 +130,25 @@ def run_pipeline(num_rounds: int | None = None) -> ModelRun:
             metrics={**metrics, "target_season": int(season), "target_week": int(week) if tw else None},
             feature_importance=final.feature_importance(),
         )
+        # Live predictions (published before kickoff) are kept forever so accuracy can be measured
+        # against what the site actually showed. Only the not-yet-played rows for the target week are
+        # replaced; backtest rows are rebuilt and fill weeks that have no live prediction.
+        Prediction.objects.filter(season=season, is_backtest=True).delete()
         objs = []
-        if backtest_models is not None and len(current):
-            objs += _prediction_objects(current, backtest_models.predict(current), run, backtest=True)
         if upcoming is not None and len(upcoming):
             to_predict = frame[~frame["is_played"].astype(bool)]
+            Prediction.objects.filter(
+                season=season, week=week, is_backtest=False, player_id__in=list(to_predict["player_id"])
+            ).delete()
             objs += _prediction_objects(to_predict, final.predict(to_predict), run, backtest=False)
-        Prediction.objects.filter(season=season).delete()
+        if backtest_models is not None and len(current):
+            live = set(
+                Prediction.objects.filter(season=season, is_backtest=False).values_list("player_id", "week")
+            )
+            mask = [(pid, int(wk)) not in live for pid, wk in zip(current["player_id"], current["week"])]
+            current = current[mask]
+            if len(current):
+                objs += _prediction_objects(current, backtest_models.predict(current), run, backtest=True)
         Prediction.objects.bulk_create(objs, batch_size=2000)
         # Keep a few recent runs for comparison; older serialized models are dead weight.
         stale = ModelRun.objects.order_by("-created_at").values_list("pk", flat=True)[KEEP_RUNS:]

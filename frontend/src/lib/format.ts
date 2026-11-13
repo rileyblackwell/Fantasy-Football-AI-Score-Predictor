@@ -1,4 +1,5 @@
-export const SCORING_LABELS = { ppr: 'PPR', half: 'Half PPR', std: 'Standard' } as const
+export const SCORING_LABELS = { ppr: 'PPR', half: 'Half', std: 'Std' } as const
+export const SCORING_NAMES = { ppr: 'PPR', half: 'Half-PPR', std: 'Standard' } as const
 
 export function matchup(opponent: string, isHome: boolean | null): string {
   if (isHome === null) return opponent
@@ -28,6 +29,7 @@ export function featureLabel(feature: string): string {
     ppr_season_avg: 'Season average',
     ppr_prev_season_avg: 'Last season average',
     implied_team_total: 'Vegas implied team total',
+    opp_implied_total: 'Opponent implied total',
     team_spread: 'Point spread',
     game_total: 'Vegas game total',
     target_share_last3: 'Target share (last 3)',
@@ -58,4 +60,12 @@ export function relativeTime(iso: string | null, now: Date = new Date()): string
   if (hours < 24) return `${hours} hr ago`
   const days = Math.round(hours / 24)
   return `${days} day${days === 1 ? '' : 's'} ago`
+}
+
+export const POSITION_NAMES: Record<string, string> = {
+  QB: 'Quarterbacks',
+  RB: 'Running backs',
+  WR: 'Wide receivers',
+  TE: 'Tight ends',
+  DST: 'Defenses',
 }

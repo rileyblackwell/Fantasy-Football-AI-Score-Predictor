@@ -1,11 +1,29 @@
 from django.db import models
 
-POSITIONS = ("QB", "RB", "WR", "TE")
+POSITIONS = ("QB", "RB", "WR", "TE", "DST")
+DST_PREFIX = "DST-"
 SCORING_FORMATS = ("ppr", "half", "std")
 
 
+class Team(models.Model):
+    """An NFL team, with colors and logo for the UI."""
+
+    abbr = models.CharField(max_length=4, primary_key=True)
+    name = models.CharField(max_length=60)
+    nickname = models.CharField(max_length=40)
+    color = models.CharField(max_length=9, blank=True)
+    color2 = models.CharField(max_length=9, blank=True)
+    logo_url = models.URLField(max_length=300, blank=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class Player(models.Model):
-    """An NFL skill-position player, keyed by the nflverse GSIS id (e.g. 00-0033873)."""
+    """An NFL skill-position player, keyed by the nflverse GSIS id (e.g. 00-0033873).
+
+    Team defenses are players too, with ids like ``DST-KC`` and position ``DST``.
+    """
 
     player_id = models.CharField(max_length=20, primary_key=True)
     name = models.CharField(max_length=100)
@@ -62,6 +80,14 @@ class WeeklyStat(models.Model):
     receiving_yards = models.SmallIntegerField(default=0)
     receiving_tds = models.SmallIntegerField(default=0)
     target_share = models.FloatField(null=True)
+    # Team defense / special teams (only set for DST rows)
+    def_sacks = models.FloatField(default=0)
+    def_interceptions = models.SmallIntegerField(default=0)
+    def_fumble_recoveries = models.SmallIntegerField(default=0)
+    def_tds = models.SmallIntegerField(default=0)
+    def_safeties = models.SmallIntegerField(default=0)
+    def_blocked_kicks = models.SmallIntegerField(default=0)
+    points_allowed = models.SmallIntegerField(null=True)
     fantasy_points_std = models.FloatField()
     fantasy_points_ppr = models.FloatField()
 

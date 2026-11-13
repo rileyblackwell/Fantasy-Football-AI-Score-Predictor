@@ -1,6 +1,8 @@
 # Fantasy Football Score Predictor
 
-A web app that projects weekly fantasy points (PPR, half-PPR and standard) for every NFL QB, RB, WR and TE.
+A web app that projects weekly fantasy points (PPR, half-PPR and standard) for every NFL QB, RB, WR, TE and team defense (D/ST), and grades every published projection against the real result.
+
+Live at https://fantasy-football-score-predictor.up.railway.app
 
 - **Backend:** Django + Django REST Framework, Postgres in production (SQLite locally)
 - **Frontend:** Vue 3 + Vite + TypeScript, built and served by Django (WhiteNoise)
@@ -12,7 +14,7 @@ The original scraper and PyTorch notebook live in [`legacy/`](legacy/) for refer
 
 ## How predictions are made
 
-1. `ingest` downloads regular-season box scores since 2016 plus the current season's schedule, rosters and injury reports.
+1. `ingest` downloads regular-season box scores since 2016 (players, plus team defense stats scored with standard D/ST rules: sacks, turnovers, TDs, safeties, blocked kicks and points-allowed tiers) plus the current season's schedule, rosters and injury reports.
 2. `features.py` builds one row per player-week using only information from *before* that week: recent scoring
    (last 1/3/5/10 games, season average, last season), usage (targets, carries, pass attempts, target share), Vegas
    implied team total and spread, and how many points the opponent has allowed to that position.
@@ -21,7 +23,8 @@ The original scraper and PyTorch notebook live in [`legacy/`](legacy/) for refer
    - scores a model trained on earlier seasons against the last full season (shown on the "How it works" page),
    - backtests the current season's played weeks with a model that never saw this season,
    - trains the final model on everything and projects the next unplayed week for active rostered players.
-5. Trained models are stored in Postgres (`ModelRun.boosters`), so nothing depends on the container's disk.
+5. Projections published before kickoff are never overwritten, so the Scorecard page (`/api/accuracy`) grades what the site actually showed.
+6. Trained models are stored in Postgres (`ModelRun.boosters`), so nothing depends on the container's disk.
 
 ## Local development
 

@@ -13,6 +13,11 @@ from predictor.pipeline import run_pipeline
 logger = logging.getLogger(__name__)
 
 
+def needs_full_load() -> bool:
+    """True on an empty database, or one loaded before team defenses were added."""
+    return not WeeklyStat.objects.exists() or not WeeklyStat.objects.filter(position="DST").exists()
+
+
 class Command(BaseCommand):
     help = (
         "Scheduled job: pull the latest nflverse data, retrain and write predictions. "
@@ -25,17 +30,18 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, if_empty=False, **options):
-        if if_empty and ModelRun.objects.exists():
+        full_load = needs_full_load()
+        if if_empty and ModelRun.objects.exists() and not full_load:
             self.stdout.write("Data already loaded; skipping refresh.")
             return
         log = RefreshLog.objects.create()
         start = time.perf_counter()
         try:
             latest = current_season()
-            if WeeklyStat.objects.exists():
-                seasons = [latest]
-            else:
+            if full_load:
                 seasons = list(range(settings.FIRST_SEASON, latest + 1))
+            else:
+                seasons = [latest]
             summary = ingest(seasons)
             run = run_pipeline()
             log.message = (
