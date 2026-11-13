@@ -1,6 +1,6 @@
-# Blitz: AI Fantasy Football Score Predictor
+# AI Fantasy Football Score Predictor
 
-Blitz is a web app that projects weekly fantasy points (PPR, half-PPR and standard) for every NFL QB, RB, WR, TE and team defense (D/ST), and grades every published projection against the real result.
+A web app that projects weekly fantasy points (PPR, half-PPR and standard) for every NFL QB, RB, WR, TE and team defense (D/ST), and grades every published projection against the real result.
 
 Live at https://fantasy-football-score-predictor.up.railway.app
 
