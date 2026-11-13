@@ -18,7 +18,7 @@ const router = createRouter({
 
 router.afterEach((to) => {
   const page = to.meta.title as string | undefined
-  document.title = page ? `${page} · AI Fantasy Football Score Predictor` : 'AI Fantasy Football Score Predictor'
+  document.title = page ? `${page} · Fantasy Football Score Predictor` : 'Fantasy Football Score Predictor'
 })
 
 createApp(App).use(router).mount('#app')
