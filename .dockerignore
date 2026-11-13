@@ -1,0 +1,7 @@
+.git
+legacy
+**/node_modules
+frontend/dist
+backend/db.sqlite3
+backend/staticfiles
+**/__pycache__

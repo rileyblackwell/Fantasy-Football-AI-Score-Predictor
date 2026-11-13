@@ -3,3 +3,9 @@ Pipfile.lock
 player_stats.db
 Makefile
 .vscode
+# Web app
+node_modules/
+frontend/dist/
+backend/db.sqlite3
+backend/staticfiles/
+*.pyc
