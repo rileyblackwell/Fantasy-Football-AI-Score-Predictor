@@ -20,7 +20,7 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
   <section>
     <div class="hero">
       <div class="eyebrow">Under the hood</div>
-      <h1>How the <span>AI</span> works</h1>
+      <h1>How <span>Blitz</span> works</h1>
       <p>A gradient-boosted machine-learning model trained on every regular-season game since 2016, retrained every morning.</p>
     </div>
 

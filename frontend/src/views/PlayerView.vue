@@ -19,6 +19,7 @@ async function load() {
   error.value = ''
   try {
     player.value = await api.player(String(route.params.id), scoring.value)
+    document.title = `${player.value.name} Projection · Blitz AI Fantasy Football Score Predictor`
   } catch (e) {
     error.value = (e as Error).message
   }
