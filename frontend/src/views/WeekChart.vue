@@ -4,6 +4,8 @@ import type { PlayerWeek } from '../lib/api'
 
 const props = defineProps<{ weeks: PlayerWeek[] }>()
 
+const swatch = 'mr-[5px] inline-block size-3 rounded-[3px] align-[-1px]'
+
 const W = 720
 const H = 240
 const PAD = { top: 14, right: 12, bottom: 30, left: 36 }
@@ -28,11 +30,11 @@ const ticks = computed(() => {
 </script>
 
 <template>
-  <div class="chart">
-    <svg :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="Weekly fantasy points: bars are actual scores, markers are projections">
+  <div>
+    <svg class="block h-auto w-full" :viewBox="`0 0 ${W} ${H}`" role="img" aria-label="Weekly fantasy points: bars are actual scores, markers are projections">
       <g v-for="t in ticks" :key="t">
-        <line :x1="PAD.left" :x2="W - PAD.right" :y1="y(t)" :y2="y(t)" class="grid" :class="{ zero: t === 0 }" />
-        <text :x="PAD.left - 8" :y="y(t) + 4" class="axis" text-anchor="end">{{ t }}</text>
+        <line :x1="PAD.left" :x2="W - PAD.right" :y1="y(t)" :y2="y(t)" :class="t === 0 ? 'stroke-muted [stroke-opacity:0.5]' : 'stroke-line'" stroke-width="1" />
+        <text :x="PAD.left - 8" :y="y(t) + 4" class="fill-muted font-sans text-[11px]" text-anchor="end">{{ t }}</text>
       </g>
       <g v-for="(w, i) in weeks" :key="w.week">
         <rect
@@ -42,8 +44,7 @@ const ticks = computed(() => {
           :y="Math.min(y(w.actual), y(0))"
           :height="Math.max(1, Math.abs(y(0) - y(w.actual)))"
           rx="4"
-          class="bar"
-          :class="{ beat: w.projected !== null && w.actual >= w.projected }"
+          :class="w.projected !== null && w.actual >= w.projected ? 'fill-accent [fill-opacity:0.85]' : 'fill-muted [fill-opacity:0.45]'"
         >
           <title>Week {{ w.week }}: {{ w.actual }} actual{{ w.projected !== null ? `, ${w.projected} projected` : '' }}</title>
         </rect>
@@ -54,7 +55,7 @@ const ticks = computed(() => {
           :y="y(w.projected)"
           :height="Math.max(1, y(0) - y(w.projected))"
           rx="4"
-          class="bar upcoming"
+          class="fill-none stroke-accent stroke-[1.5] [stroke-dasharray:4_3]"
         >
           <title>Week {{ w.week }} projection: {{ w.projected }}</title>
         </rect>
@@ -64,86 +65,16 @@ const ticks = computed(() => {
           :x2="x(i) + barW / 2 + 4"
           :y1="y(w.projected)"
           :y2="y(w.projected)"
-          class="proj-tick"
+          class="stroke-fg stroke-[2.5] [stroke-linecap:round]"
         />
-        <text :x="x(i)" :y="H - 10" class="axis" text-anchor="middle">{{ w.week }}</text>
+        <text :x="x(i)" :y="H - 10" class="fill-muted font-sans text-[11px]" text-anchor="middle">{{ w.week }}</text>
       </g>
     </svg>
-    <div class="legend">
-      <span><i class="sw sw-beat" /> Beat projection</span>
-      <span><i class="sw sw-miss" /> Fell short</span>
-      <span><i class="sw sw-tick" /> Projection</span>
-      <span><i class="sw sw-up" /> Upcoming</span>
+    <div class="mt-2.5 flex flex-wrap gap-[18px] text-[13px] text-muted">
+      <span><i :class="swatch" class="bg-accent" /> Beat projection</span>
+      <span><i :class="swatch" class="bg-muted/45" /> Fell short</span>
+      <span><i :class="swatch" class="h-[3px]! bg-fg align-[3px]!" /> Projection</span>
+      <span><i :class="swatch" class="border-[1.5px] border-dashed border-accent" /> Upcoming</span>
     </div>
   </div>
 </template>
-
-<style scoped>
-svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-.grid {
-  stroke: var(--border);
-  stroke-width: 1;
-}
-.grid.zero {
-  stroke: var(--muted);
-  stroke-opacity: 0.5;
-}
-.axis {
-  fill: var(--muted);
-  font-size: 11px;
-  font-family: var(--font-body);
-}
-.bar {
-  fill: var(--muted);
-  fill-opacity: 0.45;
-}
-.bar.beat {
-  fill: var(--accent);
-  fill-opacity: 0.85;
-}
-.bar.upcoming {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
-}
-.proj-tick {
-  stroke: var(--text);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-.legend {
-  display: flex;
-  gap: 18px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 10px;
-}
-.sw {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  vertical-align: -1px;
-  margin-right: 5px;
-}
-.sw-beat {
-  background: var(--accent);
-}
-.sw-miss {
-  background: color-mix(in srgb, var(--muted) 45%, transparent);
-}
-.sw-tick {
-  background: var(--text);
-  height: 3px;
-  vertical-align: 3px;
-}
-.sw-up {
-  border: 1.5px dashed var(--accent);
-}
-</style>
