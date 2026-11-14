@@ -1,7 +1,8 @@
 from django.test import TestCase, override_settings
 
-from predictor.models import InjuryReport
+from predictor.models import Game, InjuryReport
 from predictor.pipeline import run_pipeline
+from predictor.views import bye_weeks
 from predictor.tests.factories import populate_db
 
 
@@ -37,6 +38,14 @@ class ApiTests(TestCase):
         wr = next(r for r in data["results"] if r["player_id"] == "00-AAA-WR")
         self.assertEqual(wr["injury_status"], "Out")
         self.assertIsNone(wr["actual"])
+
+    def test_predictions_include_bye_week(self):
+        self.assertIsNone(self.client.get("/api/predictions").json()["results"][0]["bye_week"])
+        # Week 5 of 2025 pairs AAA with CCC; drop that game so both teams are off that week.
+        Game.objects.filter(season=2025, week=5, home_team="AAA").delete()
+        rows = self.client.get("/api/predictions").json()["results"]
+        self.assertEqual({r["team"] for r in rows if r["bye_week"] == 5}, {"AAA", "CCC"})
+        self.assertTrue(all(r["bye_week"] is None for r in rows if r["team"] in ("BBB", "DDD")))
 
     def test_predictions_filters_and_scoring(self):
         rbs = self.client.get("/api/predictions", {"position": "rb"}).json()["results"]
@@ -102,3 +111,19 @@ class AccuracyApiTests(TestCase):
         data = self.client.get("/api/players/DST-AAA").json()
         self.assertEqual(data["position"], "DST")
         self.assertIn("pts allowed", data["weeks"][0]["line"]["dst"])
+
+
+class ByeWeekTests(TestCase):
+    def game(self, week, home, away):
+        Game.objects.create(game_id=f"2026_{week:02d}_{away}_{home}", season=2026, week=week, home_team=home, away_team=away)
+
+    def test_bye_is_the_first_week_without_a_game(self):
+        self.game(1, "AAA", "BBB")
+        self.game(1, "CCC", "DDD")
+        self.game(2, "AAA", "CCC")
+        self.game(3, "BBB", "DDD")
+        self.game(3, "AAA", "CCC")
+        self.assertEqual(bye_weeks(2026), {"BBB": 2, "DDD": 2})
+
+    def test_no_schedule_means_no_byes(self):
+        self.assertEqual(bye_weeks(2030), {})

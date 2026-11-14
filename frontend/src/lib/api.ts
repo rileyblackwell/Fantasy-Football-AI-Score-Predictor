@@ -56,6 +56,8 @@ export interface PredictionRow {
   recent_avg_ppr: number | null
   injury_status: string | null
   injury: string | null
+  /** The team's bye week this season, or null if it has none on the schedule. */
+  bye_week: number | null
   actual: number | null
   is_backtest: boolean
 }
