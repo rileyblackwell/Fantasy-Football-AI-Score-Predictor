@@ -74,6 +74,22 @@ export function featureLabel(feature: string): string {
     weeks_since_last_game: 'Weeks since last game',
     position_code: 'Position',
     is_home: 'Home or away',
+    ppr_ewm4: 'Recent form (weighted)',
+    ppr_last20: 'Last 20 games avg',
+    ppr_career_avg: 'Career average',
+    ppr_prev2_avg: 'Last two seasons average',
+    snap_last1: 'Snap share (last game)',
+    snap_last3: 'Snap share (last 3)',
+    xfp_last3: 'Expected points (last 3)',
+    xfp_last6: 'Expected points (last 6)',
+    air_yards_last3: 'Air yards (last 3)',
+    inj_status: 'Injury status',
+    vacated_ppr_pos: 'Injured teammates at position',
+    vacated_targets: 'Targets from injured teammates',
+    vacated_carries: 'Carries from injured teammates',
+    age: 'Age',
+    nfl_year: 'Years in the NFL',
+    draft_pick: 'Draft pick',
   }
   return labels[feature] ?? feature
 }

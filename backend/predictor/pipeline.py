@@ -10,21 +10,32 @@ from django.db.models import Max, Min
 
 from .features import build_features
 from .modeling import TrainedModels, evaluate, train
-from .models import POSITIONS, Game, ModelRun, Player, Prediction, WeeklyStat
+from .models import POSITIONS, Game, InjuryReport, ModelRun, Player, Prediction, WeeklyStat
 
 logger = logging.getLogger(__name__)
 
 STAT_FIELDS = [
     "player_id", "season", "week", "team", "opponent", "position", "completions", "attempts", "passing_yards",
     "passing_tds", "interceptions", "carries", "rushing_yards", "rushing_tds", "targets", "receptions",
-    "receiving_yards", "receiving_tds", "target_share", "fantasy_points_std", "fantasy_points_ppr",
+    "receiving_yards", "receiving_tds", "target_share", "offense_snap_pct", "expected_ppr", "air_yards",
+    "fantasy_points_std", "fantasy_points_ppr",
 ]
+PLAYER_BIO_FIELDS = ["player_id", "birth_date", "rookie_season", "draft_pick"]
+INJURY_FIELDS = ["player_id", "season", "week", "status"]
 KEEP_RUNS = 5
 GAME_FIELDS = ["season", "week", "home_team", "away_team", "spread_line", "total_line", "home_score"]
 
 
 def stats_frame() -> pd.DataFrame:
     return pd.DataFrame.from_records(WeeklyStat.objects.values(*STAT_FIELDS), columns=STAT_FIELDS)
+
+
+def players_frame() -> pd.DataFrame:
+    return pd.DataFrame.from_records(Player.objects.values(*PLAYER_BIO_FIELDS), columns=PLAYER_BIO_FIELDS)
+
+
+def injuries_frame() -> pd.DataFrame:
+    return pd.DataFrame.from_records(InjuryReport.objects.values(*INJURY_FIELDS), columns=INJURY_FIELDS)
 
 
 def games_frame() -> pd.DataFrame:
@@ -105,7 +116,7 @@ def run_pipeline(num_rounds: int | None = None) -> ModelRun:
     tw = target_week()
     season, week = tw if tw else (latest_season, int(stats.loc[stats["season"] == latest_season, "week"].max()))
     upcoming = upcoming_rows(season, week, stats) if tw else None
-    frame = build_features(stats, games, upcoming)
+    frame = build_features(stats, games, upcoming, players=players_frame(), injuries=injuries_frame())
 
     # 1. Honest accuracy estimate: train on earlier seasons, score the most recent complete season.
     complete_seasons = sorted(s for s in frame["season"].unique() if s < season)

@@ -2,7 +2,11 @@ import pandas as pd
 from django.test import TestCase
 
 from predictor.ingest import (
+    add_usage,
+    clean_ff_opportunity,
     clean_injuries,
+    clean_players,
+    clean_snap_counts,
     clean_rosters,
     clean_schedule,
     clean_weekly_stats,
@@ -85,6 +89,50 @@ class CleanOtherTests(TestCase):
         )
         df = clean_injuries(raw)
         self.assertEqual(df[["player_id", "status"]].values.tolist(), [["00-1", "Out"]])
+
+    def test_injuries_before_2025_use_game_type(self):
+        # nflverse leaves season_type empty before 2025; game_type still marks regular-season weeks.
+        raw = pd.DataFrame(
+            [
+                {"season": 2018, "season_type": None, "game_type": "REG", "week": 4, "gsis_id": "00-1",
+                 "report_primary_injury": "Ankle", "report_status": "Out"},
+                {"season": 2018, "season_type": None, "game_type": "WC", "week": 18, "gsis_id": "00-1",
+                 "report_primary_injury": "Ankle", "report_status": "Out"},
+            ]
+        )
+        self.assertEqual(clean_injuries(raw)[["season", "week"]].values.tolist(), [[2018, 4]])
+
+    def test_snap_counts_and_expected_points_attach_to_stat_rows(self):
+        players = clean_players(
+            pd.DataFrame(
+                [{"gsis_id": "00-1", "pfr_id": "DoeJo00", "birth_date": "1998-05-02", "rookie_season": 2020,
+                  "draft_pick": None}]
+            )
+        )
+        self.assertTrue(pd.isna(players.iloc[0]["draft_pick"]))
+        snaps = clean_snap_counts(
+            pd.DataFrame(
+                [
+                    {"game_type": "REG", "season": 2025, "week": 1, "pfr_player_id": "DoeJo00", "offense_pct": 0.83},
+                    {"game_type": "WC", "season": 2025, "week": 19, "pfr_player_id": "DoeJo00", "offense_pct": 0.9},
+                    {"game_type": "REG", "season": 2025, "week": 1, "pfr_player_id": "Unknown", "offense_pct": 0.5},
+                ]
+            ),
+            players,
+        )
+        self.assertEqual(snaps[["player_id", "offense_snap_pct"]].values.tolist(), [["00-1", 0.83]])
+        opp = clean_ff_opportunity(
+            pd.DataFrame(
+                [{"player_id": "00-1", "season": "2025", "week": 1, "total_fantasy_points_exp": 14.2,
+                  "rec_air_yards": 55.0}]
+            )
+        )
+        stats = clean_weekly_stats(pd.DataFrame([raw_stat()]))
+        merged = add_usage(stats, snaps, opp)
+        self.assertAlmostEqual(merged.iloc[0]["offense_snap_pct"], 0.83)
+        self.assertAlmostEqual(merged.iloc[0]["expected_ppr"], 14.2)
+        store_weekly_stats(merged, [2025])
+        self.assertAlmostEqual(WeeklyStat.objects.get().expected_ppr, 14.2)
 
     def test_rosters_latest_week_wins_and_store_skips_unknown_injuries(self):
         raw = pd.DataFrame(

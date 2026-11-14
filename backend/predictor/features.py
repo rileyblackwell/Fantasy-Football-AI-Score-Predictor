@@ -24,7 +24,13 @@ USAGE_COLUMNS = [
     "rushing_yards",
     "receiving_yards",
     "target_share",
+    "offense_snap_pct",
+    "expected_ppr",
+    "air_yards",
 ]
+
+# Official game-status designations, as a number (0 = not on the report).
+INJURY_LEVELS = {"Questionable": 1, "Doubtful": 2, "Out": 3}
 
 FEATURES = [
     "position_code",
@@ -54,6 +60,26 @@ FEATURES = [
     "target_share_last3",
     "opp_allowed_ppr_last8",
     "opp_allowed_ppr_season",
+    # Longer-run form: a smoothed recent average, a 20-game window, career and two-season baselines.
+    "ppr_ewm4",
+    "ppr_last20",
+    "ppr_career_avg",
+    "ppr_prev2_avg",
+    # Role: share of the offense's snaps, and expected points from the volume and quality of looks.
+    "snap_last1",
+    "snap_last3",
+    "xfp_last3",
+    "xfp_last6",
+    "air_yards_last3",
+    # This week's injury report: the player's own status and the workload of teammates ruled out.
+    "inj_status",
+    "vacated_ppr_pos",
+    "vacated_targets",
+    "vacated_carries",
+    # Career stage.
+    "age",
+    "nfl_year",
+    "draft_pick",
 ]
 CATEGORICAL_FEATURES = ["position_code"]
 
@@ -92,6 +118,12 @@ def team_games(games: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([home, away], ignore_index=True)
 
 
+def _rolling_mean(df: pd.DataFrame, keys, col: str, window: int, min_periods: int = 1) -> pd.Series:
+    """Rolling mean of ``col`` within each group, aligned to ``df``'s index (vectorized, no lambdas)."""
+    out = df.groupby(keys, sort=False)[col].rolling(window, min_periods=min_periods).mean()
+    return out.reset_index(level=list(range(out.index.nlevels - 1)), drop=True)
+
+
 def _week_index(season: pd.Series, week: pd.Series) -> pd.Series:
     """A monotonically increasing game-time index across seasons (18 regular-season weeks max)."""
     return season.astype(int) * 100 + week.astype(int)
@@ -108,22 +140,103 @@ def opponent_allowed(stats: pd.DataFrame) -> pd.DataFrame:
         .sum()
         .rename(columns={"fantasy_points_ppr": "allowed"})
         .sort_values(["opponent", "position", "season", "week"])
+        .reset_index(drop=True)
     )
-    grp = allowed.groupby(["opponent", "position"])["allowed"]
-    allowed["opp_allowed_ppr_last8"] = grp.transform(lambda s: s.rolling(8, min_periods=1).mean())
-    allowed["opp_allowed_ppr_season"] = allowed.groupby(["opponent", "position", "season"])["allowed"].transform(
-        lambda s: s.expanding().mean()
-    )
+    allowed["opp_allowed_ppr_last8"] = _rolling_mean(allowed, ["opponent", "position"], "allowed", 8)
+    season_grp = allowed.groupby(["opponent", "position", "season"], sort=False)["allowed"]
+    allowed["opp_allowed_ppr_season"] = season_grp.cumsum() / (season_grp.cumcount() + 1)
     allowed["t"] = _week_index(allowed["season"], allowed["week"])
     return allowed
 
 
-def build_features(stats: pd.DataFrame, games: pd.DataFrame, upcoming: pd.DataFrame | None = None) -> pd.DataFrame:
+def _injury_features(df: pd.DataFrame, played: pd.DataFrame, injuries: pd.DataFrame | None) -> pd.DataFrame:
+    """The player's own game status this week, and the recent workload of teammates ruled out.
+
+    A teammate counts as ruled out when listed Out or Doubtful for the week. Their workload is the
+    average over their last four games (as of before this week), counted only if they played this
+    season or last, and credited to the team they last played for.
+    """
+    cols = ["inj_status", "vacated_ppr_pos", "vacated_targets", "vacated_carries"]
+    if injuries is None or injuries.empty:
+        for col in cols:
+            df[col] = 0.0
+        return df
+    inj = injuries[["player_id", "season", "week", "status"]].copy()
+    inj["level"] = inj["status"].map(INJURY_LEVELS).fillna(0).astype(float)
+    inj = inj.sort_values("level").drop_duplicates(["player_id", "season", "week"], keep="last")
+    df = df.merge(
+        inj[["player_id", "season", "week", "level"]].rename(columns={"level": "inj_status"}),
+        on=["player_id", "season", "week"],
+        how="left",
+    )
+    df["inj_status"] = df["inj_status"].fillna(0.0)
+
+    work = played[["player_id", "season", "week", "team", "position", "fantasy_points_ppr", "targets", "carries"]]
+    work = work.sort_values(["player_id", "season", "week"]).reset_index(drop=True)
+    for col in ["fantasy_points_ppr", "targets", "carries"]:
+        work[col] = work[col].astype(float)
+        work["w_" + col] = _rolling_mean(work, "player_id", col, 4)
+    work["t"] = _week_index(work["season"], work["week"]).astype("int64")
+    work = work.rename(columns={"season": "_last_season"}).sort_values("t")
+
+    out = inj[inj["level"] >= 2].copy()
+    out["t"] = _week_index(out["season"], out["week"]).astype("int64")
+    out = pd.merge_asof(
+        out.sort_values("t"),
+        work[["player_id", "t", "_last_season", "team", "position", "w_fantasy_points_ppr", "w_targets", "w_carries"]],
+        on="t",
+        by="player_id",
+        allow_exact_matches=False,
+        direction="backward",
+    )
+    out = out[out["_last_season"] >= out["season"] - 1]
+    by_pos = (
+        out.groupby(["team", "season", "week", "position"], as_index=False)["w_fantasy_points_ppr"]
+        .sum()
+        .rename(columns={"w_fantasy_points_ppr": "vacated_ppr_pos"})
+    )
+    by_team = (
+        out.groupby(["team", "season", "week"], as_index=False)[["w_targets", "w_carries"]]
+        .sum()
+        .rename(columns={"w_targets": "vacated_targets", "w_carries": "vacated_carries"})
+    )
+    df = df.merge(by_pos, on=["team", "season", "week", "position"], how="left")
+    df = df.merge(by_team, on=["team", "season", "week"], how="left")
+    for col in cols[1:]:
+        df[col] = df[col].astype(float).fillna(0.0)
+    return df
+
+
+def _career_features(df: pd.DataFrame, players: pd.DataFrame | None) -> pd.DataFrame:
+    """Age at the season's midpoint, years in the league and draft slot (undrafted players stay empty)."""
+    if players is None or players.empty:
+        for col in ["age", "nfl_year", "draft_pick"]:
+            df[col] = np.nan
+        return df
+    bio = players[["player_id", "birth_date", "rookie_season", "draft_pick"]].drop_duplicates("player_id")
+    df = df.merge(bio, on="player_id", how="left")
+    born = pd.to_datetime(df["birth_date"], errors="coerce")
+    df["age"] = df["season"] + 0.75 - (born.dt.year + born.dt.day_of_year / 365.25)
+    df["nfl_year"] = df["season"] - pd.to_numeric(df["rookie_season"], errors="coerce")
+    df["draft_pick"] = pd.to_numeric(df["draft_pick"], errors="coerce")
+    return df.drop(columns=["birth_date", "rookie_season"])
+
+
+def build_features(
+    stats: pd.DataFrame,
+    games: pd.DataFrame,
+    upcoming: pd.DataFrame | None = None,
+    players: pd.DataFrame | None = None,
+    injuries: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Build the feature frame.
 
     ``stats`` holds played games (one row per player-week, with fantasy points).
     ``upcoming`` optionally holds rows to predict, with columns player_id, season, week, team,
     opponent, position. Their fantasy points are NaN in the output.
+    ``players`` optionally holds birth_date, rookie_season and draft_pick per player_id, and
+    ``injuries`` the weekly injury report (player_id, season, week, status). Without them those
+    features are left empty and the model works from the rest.
     """
     played = stats.copy()
     played["is_played"] = True
@@ -142,38 +255,38 @@ def build_features(stats: pd.DataFrame, games: pd.DataFrame, upcoming: pd.DataFr
     df = df.sort_values(["player_id", "t"]).reset_index(drop=True)
     by_player = df.groupby("player_id", sort=False)
 
-    # Rolling form over previous games (shift(1) so the current week never leaks into its own features).
-    prev_ppr = by_player["fantasy_points_ppr"].shift(1)
-    df["_prev_ppr"] = prev_ppr
-    roll = df.groupby("player_id", sort=False)["_prev_ppr"]
-    df["ppr_last1"] = prev_ppr
-    df["ppr_last3"] = roll.transform(lambda s: s.rolling(3, min_periods=1).mean())
-    df["ppr_last5"] = roll.transform(lambda s: s.rolling(5, min_periods=1).mean())
-    df["ppr_last10"] = roll.transform(lambda s: s.rolling(10, min_periods=1).mean())
-    df["ppr_std5"] = roll.transform(lambda s: s.rolling(5, min_periods=2).std())
+    # Each stat shifted by one game, so the current week never leaks into its own features.
+    prev = {col: by_player[col].shift(1) for col in USAGE_COLUMNS}
+    for col, series in prev.items():
+        df["_prev_" + col] = series
 
-    for col, name in [
-        ("fantasy_points_std", "std_last5"),
-        ("targets", "targets_last3"),
-        ("receptions", "receptions_last3"),
-        ("carries", "carries_last3"),
-        ("attempts", "attempts_last3"),
-        ("passing_yards", "passing_yards_last3"),
-        ("rushing_yards", "rushing_yards_last3"),
-        ("receiving_yards", "receiving_yards_last3"),
-        ("target_share", "target_share_last3"),
-    ]:
-        window = 5 if name.endswith("5") else 3
-        df["_tmp"] = by_player[col].shift(1)
-        df[name] = df.groupby("player_id", sort=False)["_tmp"].transform(
-            lambda s, w=window: s.rolling(w, min_periods=1).mean()
-        )
+    def roll(col: str, window: int, min_periods: int = 1) -> pd.Series:
+        return _rolling_mean(df, "player_id", "_prev_" + col, window, min_periods)
+
+    df["ppr_last1"] = prev["fantasy_points_ppr"]
+    df["ppr_last3"] = roll("fantasy_points_ppr", 3)
+    df["ppr_last5"] = roll("fantasy_points_ppr", 5)
+    df["ppr_last10"] = roll("fantasy_points_ppr", 10)
+    df["ppr_last20"] = roll("fantasy_points_ppr", 20)
+    std5 = df.groupby("player_id", sort=False)["_prev_fantasy_points_ppr"].rolling(5, min_periods=2).std()
+    df["ppr_std5"] = std5.reset_index(level=0, drop=True)
+    ewm = df.groupby("player_id", sort=False)["_prev_fantasy_points_ppr"].ewm(halflife=4, ignore_na=True).mean()
+    df["ppr_ewm4"] = ewm.reset_index(level=0, drop=True)
+    prev_grp = df.groupby("player_id", sort=False)["_prev_fantasy_points_ppr"]
+    df["ppr_career_avg"] = prev_grp.cumsum() / prev_grp.cumcount().where(lambda n: n > 0)
+    df["std_last5"] = roll("fantasy_points_std", 5)
+    for col in ["targets", "receptions", "carries", "attempts", "passing_yards", "rushing_yards",
+                "receiving_yards", "target_share", "air_yards"]:
+        df[f"{col}_last3"] = roll(col, 3)
+    df["snap_last1"] = prev["offense_snap_pct"]
+    df["snap_last3"] = roll("offense_snap_pct", 3)
+    df["xfp_last3"] = roll("expected_ppr", 3)
+    df["xfp_last6"] = roll("expected_ppr", 6)
 
     by_season = df.groupby(["player_id", "season"], sort=False)
     df["_prev_ppr_season"] = by_season["fantasy_points_ppr"].shift(1)
-    df["ppr_season_avg"] = df.groupby(["player_id", "season"], sort=False)["_prev_ppr_season"].transform(
-        lambda s: s.expanding().mean()
-    )
+    season_prev = df.groupby(["player_id", "season"], sort=False)["_prev_ppr_season"]
+    df["ppr_season_avg"] = season_prev.cumsum() / season_prev.cumcount().where(lambda n: n > 0)
     df["games_this_season"] = by_season.cumcount()
     df["career_games"] = by_player.cumcount()
 
@@ -185,11 +298,15 @@ def build_features(stats: pd.DataFrame, games: pd.DataFrame, upcoming: pd.DataFr
         (df["season"] - prev_t // 100) * 18 + (df["week"] - prev_t % 100),
     )
 
-    season_avgs = (
-        played.groupby(["player_id", "season"])["fantasy_points_ppr"].mean().rename("ppr_prev_season_avg").reset_index()
-    )
-    season_avgs["season"] = season_avgs["season"] + 1
-    df = df.merge(season_avgs, on=["player_id", "season"], how="left")
+    # Per-game averages for last season, and for the last two seasons together.
+    totals = played.groupby(["player_id", "season"])["fantasy_points_ppr"].agg(["sum", "count"]).reset_index()
+    last1 = totals.assign(season=totals["season"] + 1)
+    last2 = totals.assign(season=totals["season"] + 2)
+    seasons = last1.merge(last2, on=["player_id", "season"], how="outer", suffixes=("_1", "_2"))
+    seasons["ppr_prev_season_avg"] = seasons["sum_1"] / seasons["count_1"]
+    filled = seasons.fillna({"sum_1": 0, "count_1": 0, "sum_2": 0, "count_2": 0})
+    seasons["ppr_prev2_avg"] = (filled["sum_1"] + filled["sum_2"]) / (filled["count_1"] + filled["count_2"])
+    df = df.merge(seasons[["player_id", "season", "ppr_prev_season_avg", "ppr_prev2_avg"]], on=["player_id", "season"], how="left")
 
     # Game context from the schedule.
     tg = team_games(games)
@@ -211,6 +328,9 @@ def build_features(stats: pd.DataFrame, games: pd.DataFrame, upcoming: pd.DataFr
     )
     # Season-to-date allowed only applies within the same season.
     df.loc[df["_allowed_season"] != df["season"], "opp_allowed_ppr_season"] = np.nan
+
+    df = _injury_features(df, played, injuries)
+    df = _career_features(df, players)
 
     df["position_code"] = df["position"].map(POSITION_CODES).astype(float)
     df["fantasy_points_half"] = (df["fantasy_points_ppr"] + df["fantasy_points_std"]) / 2
