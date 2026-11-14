@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PredictionRow } from '../lib/api'
-import { injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
+import { byeFlag, injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
@@ -87,6 +87,8 @@ const positionRank = computed(() => {
 const visible = computed(() => [...filtered.value].sort(sorters[sortKey.value]))
 const shown = computed(() => visible.value.slice(0, limit.value))
 const remaining = computed(() => visible.value.length - shown.value.length)
+// Upcoming bye weeks for the rows on screen, keyed by player.
+const byes = computed(() => new Map(shown.value.map((r) => [r.player_id, byeFlag(r.bye_week, current.value.week)])))
 const maxProjection = computed(() => Math.max(1, ...rows.value.map((r) => r.projected)))
 
 async function loadRows() {
@@ -324,11 +326,23 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
                       :title="`${row.injury_status}${row.injury ? ` (${row.injury})` : ''}`"
                       >{{ injuryShort(row.injury_status) }}</span
                     >
+                    <span
+                      v-if="byes.get(row.player_id)?.soon"
+                      class="ml-1.5 inline-block rounded-sm bg-accent-soft px-[5px] py-px align-[1px] text-[10.5px] font-extrabold tracking-[0.03em] text-accent uppercase"
+                      :title="byes.get(row.player_id)?.title"
+                      >{{ byes.get(row.player_id)?.label }}</span
+                    >
                     <span :class="meta">
                       <PosChip :pos="row.position" />
                       <span>{{ row.position }}{{ positionRank.get(row.player_id) }}</span>
                       <span>· {{ row.team }}</span>
                       <span class="hidden max-tab:inline">· {{ row.is_home ? 'vs' : '@' }} {{ row.opponent }}</span>
+                      <span
+                        v-if="byes.get(row.player_id) && !byes.get(row.player_id)?.soon"
+                        class="max-tab:hidden"
+                        :title="byes.get(row.player_id)?.title"
+                        >· {{ byes.get(row.player_id)?.label }}</span
+                      >
                     </span>
                   </span>
                 </RouterLink>
@@ -343,8 +357,10 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <td class="text-right text-muted max-tab:hidden">
                 {{ row.recent_avg_ppr !== null ? points(row.recent_avg_ppr) : '–' }}
               </td>
-              <td class="text-right">
-                <div :class="projection">{{ points(row.projected) }}</div>
+              <td class="text-right" :class="{ 'opacity-45': row.injury_status === 'Out' }">
+                <div :class="projection" :title="row.injury_status === 'Out' ? 'Ruled out this week' : undefined">
+                  {{ points(row.projected) }}
+                </div>
                 <div
                   class="mt-1.5 ml-auto h-1 rounded-xs bg-bar"
                   :style="{ width: `${(row.projected / maxProjection) * 72}px` }"

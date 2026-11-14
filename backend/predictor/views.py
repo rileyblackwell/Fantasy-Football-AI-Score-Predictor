@@ -5,7 +5,7 @@ from django.http import FileResponse, Http404, JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import POSITIONS, InjuryReport, ModelRun, Player, Prediction, RefreshLog, Team, WeeklyStat
+from .models import POSITIONS, Game, InjuryReport, ModelRun, Player, Prediction, RefreshLog, Team, WeeklyStat
 
 SCORING = {"ppr": "points_ppr", "half": "points_half", "std": "points_std"}
 
@@ -29,6 +29,25 @@ def _default_week() -> tuple[int, int] | None:
         return run.metrics["target_season"], run.metrics["target_week"]
     latest = Prediction.objects.order_by("-season", "-week").values("season", "week").first()
     return (latest["season"], latest["week"]) if latest else None
+
+
+def bye_weeks(season: int) -> dict[str, int]:
+    """Each team's bye week in ``season``: the first scheduled week in which it has no game.
+
+    Teams with a game every week (or seasons with no schedule yet) are left out.
+    """
+    games = list(Game.objects.filter(season=season).values_list("week", "home_team", "away_team"))
+    weeks = {week for week, _, _ in games}
+    played: dict[str, set[int]] = {}
+    for week, home, away in games:
+        played.setdefault(home, set()).add(week)
+        played.setdefault(away, set()).add(week)
+    byes = {}
+    for team, team_weeks in played.items():
+        missing = weeks - team_weeks
+        if missing:
+            byes[team] = min(missing)
+    return byes
 
 
 def health(request):
@@ -95,6 +114,7 @@ def predictions(request):
         i.player_id: i for i in InjuryReport.objects.filter(season=season, week=week, player_id__in=ids)
     }
     actuals = {s.player_id: s for s in WeeklyStat.objects.filter(season=season, week=week, player_id__in=ids)}
+    byes = bye_weeks(season)
     results = []
     for rank, p in enumerate(qs, start=1):
         inj = injuries.get(p.player_id)
@@ -113,6 +133,7 @@ def predictions(request):
                 "recent_avg_ppr": p.recent_avg_ppr,
                 "injury_status": inj.status if inj else None,
                 "injury": inj.injury if inj else None,
+                "bye_week": byes.get(p.team),
                 "actual": round(_points(actual, scoring), 1) if actual else None,
                 "is_backtest": p.is_backtest,
             }
