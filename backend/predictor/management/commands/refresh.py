@@ -14,8 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 def needs_full_load() -> bool:
-    """True on an empty database, or one loaded before team defenses were added."""
-    return not WeeklyStat.objects.exists() or not WeeklyStat.objects.filter(position="DST").exists()
+    """True on an empty database, one loaded before team defenses were added, or one whose latest
+    model predates the snap-share, expected-points and injury features (their history needs a reload)."""
+    if not WeeklyStat.objects.exists() or not WeeklyStat.objects.filter(position="DST").exists():
+        return True
+    latest = ModelRun.objects.order_by("-created_at").first()
+    return latest is not None and "snap_last1" not in (latest.features or [])
 
 
 class Command(BaseCommand):

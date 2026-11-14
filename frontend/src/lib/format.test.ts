@@ -28,6 +28,7 @@ describe('format helpers', () => {
 
   it('labels model features in plain words and falls back to the raw name', () => {
     expect(featureLabel('implied_team_total')).toBe('Vegas implied team total')
+    expect(featureLabel('snap_last1')).toBe('Snap share (last game)')
     expect(featureLabel('something_new')).toBe('something_new')
   })
 
