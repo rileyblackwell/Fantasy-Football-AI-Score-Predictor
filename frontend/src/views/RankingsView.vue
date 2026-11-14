@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PredictionRow } from '../lib/api'
 import { injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
+import { topThree } from '../lib/spotlight'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
 import PosChip from '../components/PosChip.vue'
@@ -87,7 +88,9 @@ const positionRank = computed(() => {
 const visible = computed(() => [...filtered.value].sort(sorters[sortKey.value]))
 const shown = computed(() => visible.value.slice(0, limit.value))
 const remaining = computed(() => visible.value.length - shown.value.length)
-const spotlight = computed(() => [...filtered.value].sort(sorters.projected).slice(0, 3))
+// Past weeks with results lead with who actually scored the most; the upcoming week leads with projections.
+const spotlightByActual = computed(() => isPastWeek.value && showActual.value)
+const spotlight = computed(() => topThree(filtered.value, spotlightByActual.value))
 const maxProjection = computed(() => Math.max(1, ...rows.value.map((r) => r.projected)))
 
 async function loadRows() {
@@ -219,8 +222,10 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
           </span>
         </span>
         <span class="shrink-0 text-right font-display text-[40px] leading-none font-extrabold text-accent tabular-nums">
-          {{ points(row.projected) }}
-          <small class="block text-[12px] tracking-[0.08em] text-muted uppercase">pts</small>
+          {{ points(spotlightByActual ? (row.actual ?? 0) : row.projected) }}
+          <small class="block text-[12px] tracking-[0.08em] text-muted uppercase">{{
+            spotlightByActual ? 'pts scored' : 'pts'
+          }}</small>
         </span>
       </RouterLink>
     </div>
