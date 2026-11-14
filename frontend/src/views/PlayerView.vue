@@ -50,8 +50,15 @@ function line(w: PlayerWeek): string {
 <template>
   <section>
     <RouterLink to="/" class="back">← All projections</RouterLink>
-    <div v-if="error" class="card state">Couldn't load this player: {{ error }}</div>
-    <div v-else-if="!player" class="card state">Loading…</div>
+    <div v-if="error" class="card state state-error" role="alert">
+      <span class="state-icon" aria-hidden="true">!</span>
+      <span class="state-title">Couldn't load this player</span>
+      <span>{{ error }}</span>
+    </div>
+    <div v-else-if="!player" class="card state" aria-busy="true">
+      <span class="spinner" aria-hidden="true" />
+      Loading player…
+    </div>
     <template v-else>
       <div
         class="banner"
@@ -101,7 +108,7 @@ function line(w: PlayerWeek): string {
         <WeekChart :weeks="player.weeks" />
       </div>
 
-      <div class="card section">
+      <div class="card section section-flush">
         <h2 class="section-title">Game log</h2>
         <div class="table-wrap">
           <table>
@@ -129,7 +136,7 @@ function line(w: PlayerWeek): string {
                   <strong v-if="w.actual !== null" :class="w.projected !== null ? (w.actual >= w.projected ? 'delta-good' : 'delta-bad') : ''">{{ w.actual.toFixed(1) }}</strong>
                   <span v-else class="muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
                 </td>
-                <td class="hide-sm muted" style="font-size: 13px">{{ line(w) }}</td>
+                <td class="hide-sm muted stat-line">{{ line(w) }}</td>
               </tr>
             </tbody>
           </table>
@@ -146,8 +153,8 @@ function line(w: PlayerWeek): string {
   display: flex;
   align-items: center;
   gap: 22px;
-  padding: 26px 28px;
-  border-radius: 20px;
+  padding: 28px 32px;
+  border-radius: var(--radius-lg);
   color: #fff;
   background: linear-gradient(120deg, color-mix(in srgb, var(--team) 92%, #000), color-mix(in srgb, var(--team) 55%, #000));
   box-shadow: var(--shadow);
@@ -193,8 +200,15 @@ function line(w: PlayerWeek): string {
   z-index: 1;
   filter: drop-shadow(0 4px 12px rgb(0 0 0 / 30%));
 }
+.tile-accent {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 70%, var(--surface)), var(--surface) 75%);
+}
 .tile-accent .tile-value {
   color: var(--accent);
+}
+.stat-line {
+  font-size: 13px;
 }
 @media (max-width: 720px) {
   .banner {

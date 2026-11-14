@@ -24,7 +24,11 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
       <p>A gradient-boosted machine-learning model trained on every regular-season game since 2016, retrained every morning.</p>
     </div>
 
-    <div v-if="error" class="card state">Couldn't load model details: {{ error }}</div>
+    <div v-if="error" class="card state state-error page-state" role="alert">
+      <span class="state-icon" aria-hidden="true">!</span>
+      <span class="state-title">Couldn't load model details</span>
+      <span>{{ error }}</span>
+    </div>
     <template v-else-if="model">
       <div class="tiles">
         <div class="card tile">
@@ -44,7 +48,7 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
         </div>
       </div>
 
-      <div class="card section">
+      <div class="card section section-flush">
         <h2 class="section-title">Accuracy by position</h2>
         <div class="table-wrap">
           <table>
@@ -58,9 +62,9 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
             </thead>
             <tbody>
               <tr v-for="(m, pos) in metrics.by_position" :key="pos">
-                <td><PosChip :pos="String(pos)" /> <span class="muted hide-sm" style="margin-left: 6px">{{ POSITION_NAMES[pos] }}</span></td>
+                <td><PosChip :pos="String(pos)" /> <span class="muted hide-sm pos-name">{{ POSITION_NAMES[pos] }}</span></td>
                 <td class="num">{{ m.rows.toLocaleString() }}</td>
-                <td class="num" style="font-weight: 600">±{{ m.model_mae.toFixed(2) }}</td>
+                <td class="num strong">±{{ m.model_mae.toFixed(2) }}</td>
                 <td class="num muted">±{{ m.baseline_mae.toFixed(2) }}</td>
               </tr>
             </tbody>
@@ -87,7 +91,10 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
         </ol>
       </div>
     </template>
-    <div v-else class="card state">Loading…</div>
+    <div v-else class="card state page-state" aria-busy="true">
+      <span class="spinner" aria-hidden="true" />
+      Loading model details…
+    </div>
   </section>
 </template>
 
@@ -97,8 +104,16 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
   grid-template-columns: minmax(120px, 240px) 1fr 52px;
   gap: 12px;
   align-items: center;
-  padding: 5px 0;
+  padding: 6px 0;
   font-size: 14px;
+}
+.feature-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.strong {
+  font-weight: 600;
 }
 .feature-bar {
   height: 8px;
@@ -119,8 +134,21 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
 }
 .steps {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 22px;
   display: grid;
-  gap: 8px;
+  gap: 12px;
+  line-height: 1.6;
+  max-width: 780px;
+}
+.steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+@media (max-width: 720px) {
+  .feature {
+    grid-template-columns: minmax(100px, 40%) 1fr 46px;
+    gap: 10px;
+    font-size: 13px;
+  }
 }
 </style>

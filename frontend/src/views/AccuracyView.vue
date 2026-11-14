@@ -42,10 +42,19 @@ function miss(p: AccuracyPick) {
       </p>
     </div>
 
-    <div v-if="error" class="card state" style="margin-top: 18px">Couldn't load the scorecard: {{ error }}</div>
-    <div v-else-if="!data" class="card state" style="margin-top: 18px">Loading…</div>
-    <div v-else-if="!overall" class="card state" style="margin-top: 18px">
-      No graded games yet this season. Check back after the first week is played.
+    <div v-if="error" class="card state state-error page-state" role="alert">
+      <span class="state-icon" aria-hidden="true">!</span>
+      <span class="state-title">Couldn't load the scorecard</span>
+      <span>{{ error }}</span>
+    </div>
+    <div v-else-if="!data" class="card state page-state" aria-busy="true">
+      <span class="spinner" aria-hidden="true" />
+      Loading the scorecard…
+    </div>
+    <div v-else-if="!overall" class="card state page-state">
+      <span class="state-icon" aria-hidden="true">🏈</span>
+      <span class="state-title">No graded games yet</span>
+      <span>Check back after the first week of the season is played.</span>
     </div>
     <template v-else>
       <div class="tiles">
@@ -74,10 +83,10 @@ function miss(p: AccuracyPick) {
           <div v-for="w in data.weeks" :key="w.week" class="week-row">
             <span class="week-label">Wk {{ w.week }}</span>
             <span class="week-bars">
-              <span class="week-bar model" :style="{ width: `${(w.mae / maxWeekMae) * 100}%` }">
+              <span class="week-bar model" :style="{ width: `${(w.mae / maxWeekMae) * 82}%` }">
                 <span>±{{ w.mae.toFixed(2) }}</span>
               </span>
-              <span v-if="w.baseline_mae" class="week-bar base" :style="{ width: `${(w.baseline_mae / maxWeekMae) * 100}%` }">
+              <span v-if="w.baseline_mae" class="week-bar base" :style="{ width: `${(w.baseline_mae / maxWeekMae) * 82}%` }">
                 <span>±{{ w.baseline_mae.toFixed(2) }}</span>
               </span>
             </span>
@@ -91,7 +100,7 @@ function miss(p: AccuracyPick) {
         </div>
       </div>
 
-      <div class="card section">
+      <div class="card section section-flush">
         <h2 class="section-title">By position</h2>
         <div class="table-wrap">
           <table>
@@ -106,7 +115,7 @@ function miss(p: AccuracyPick) {
             </thead>
             <tbody>
               <tr v-for="(m, pos) in data.by_position" :key="pos">
-                <td><PosChip :pos="String(pos)" /> <span class="hide-sm muted" style="margin-left: 6px">{{ POSITION_NAMES[pos] }}</span></td>
+                <td><PosChip :pos="String(pos)" /> <span class="hide-sm muted pos-name">{{ POSITION_NAMES[pos] }}</span></td>
                 <td class="num">{{ m.games.toLocaleString() }}</td>
                 <td class="num"><strong>±{{ m.mae.toFixed(2) }}</strong></td>
                 <td class="num hide-sm">{{ (m.within_5 * 100).toFixed(0) }}%</td>
@@ -207,6 +216,7 @@ function miss(p: AccuracyPick) {
   color: var(--muted);
   font-size: 12.5px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .legend {
   display: flex;
@@ -242,15 +252,22 @@ function miss(p: AccuracyPick) {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  margin: 0 -10px;
+  padding: 10px;
+  border-radius: 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   text-decoration: none;
   color: var(--text);
+  transition: background 0.12s;
+}
+.pick:hover {
+  background: var(--surface-2);
 }
 .pick:last-child {
   border-bottom: 0;
 }
-.pick:hover strong:first-child {
+.pick:hover strong:first-child,
+.pick:focus-visible strong:first-child {
   color: var(--accent);
 }
 .pick-nums {
@@ -267,7 +284,9 @@ function miss(p: AccuracyPick) {
 }
 .footnote {
   font-size: 13px;
-  margin-top: 16px;
+  line-height: 1.6;
+  margin-top: 18px;
+  max-width: 760px;
 }
 @media (max-width: 720px) {
   .week-row {

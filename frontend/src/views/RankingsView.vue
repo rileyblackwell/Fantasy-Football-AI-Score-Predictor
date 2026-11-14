@@ -96,6 +96,11 @@ watch(isPastWeek, (past) => {
   if (!past && sortKey.value === 'actual') sortKey.value = 'projected'
 })
 
+function clearFilters() {
+  search.value = ''
+  position.value = 'ALL'
+}
+
 function diffClass(row: PredictionRow) {
   if (row.actual === null) return ''
   return row.actual >= row.projected ? 'delta-good' : 'delta-bad'
@@ -181,13 +186,40 @@ function diffClass(row: PredictionRow) {
         <option v-for="w in weekOptions" :key="w.value" :value="w.value">{{ w.label }}</option>
       </select>
       <label class="check"><input v-model="hideOut" type="checkbox" /> Hide players ruled out</label>
+      <span v-if="!loading && !error && rows.length" class="result-count" aria-live="polite">
+        {{ visible.length }} of {{ rows.length }} players
+      </span>
     </div>
 
     <div class="card">
-      <div v-if="error || summaryError" class="state">Couldn't load projections: {{ error || summaryError }}</div>
-      <div v-else-if="loading" class="state">Loading projections…</div>
+      <div v-if="error || summaryError" class="state state-error" role="alert">
+        <span class="state-icon" aria-hidden="true">!</span>
+        <span class="state-title">Couldn't load projections</span>
+        <span>{{ error || summaryError }}</span>
+      </div>
+      <div v-else-if="loading" class="skeleton-list" aria-busy="true" aria-label="Loading projections">
+        <div v-for="n in 8" :key="n" class="skeleton-row">
+          <span class="skeleton sk-rank" />
+          <span class="skeleton sk-avatar" />
+          <span class="sk-lines">
+            <span class="skeleton sk-line" :style="{ width: `${150 - (n % 3) * 22}px` }" />
+            <span class="skeleton sk-line sk-short" />
+          </span>
+          <span class="skeleton sk-num" />
+        </div>
+      </div>
       <div v-else-if="!visible.length" class="state">
-        {{ rows.length ? 'No players match those filters.' : 'No projections yet. The first data refresh may still be running.' }}
+        <span class="state-icon" aria-hidden="true">{{ rows.length ? '🔍' : '🏈' }}</span>
+        <span class="state-title">{{ rows.length ? 'No players match those filters' : 'No projections yet' }}</span>
+        <span>{{ rows.length ? 'Try another position or clear the search.' : 'The first data refresh may still be running.' }}</span>
+        <button
+          v-if="rows.length && (search || position !== 'ALL')"
+          type="button"
+          class="pill state-action"
+          @click="clearFilters"
+        >
+          Clear filters
+        </button>
       </div>
       <div v-else class="table-wrap">
         <table>
@@ -270,7 +302,7 @@ function diffClass(row: PredictionRow) {
   text-decoration: none;
   color: var(--text);
   overflow: hidden;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s;
 }
 .spot::before {
   content: '';
@@ -289,8 +321,11 @@ function diffClass(row: PredictionRow) {
   background: radial-gradient(circle, color-mix(in srgb, var(--team) 22%, transparent), transparent 70%);
   pointer-events: none;
 }
-.spot:hover {
+.spot:hover,
+.spot:focus-visible {
   transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: color-mix(in srgb, var(--team) 35%, var(--border));
 }
 .spot-rank {
   font-family: var(--font-display);
@@ -318,6 +353,8 @@ function diffClass(row: PredictionRow) {
   line-height: 1;
   color: var(--accent);
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 .spot-points small {
   display: block;
@@ -328,5 +365,67 @@ function diffClass(row: PredictionRow) {
 }
 .team-row td:first-child {
   box-shadow: inset 4px 0 0 var(--team);
+}
+.team-row:hover td:first-child {
+  color: var(--text);
+}
+.result-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.state-action {
+  margin-top: 10px;
+}
+.skeleton-list {
+  padding: 8px 0;
+}
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.skeleton-row:last-child {
+  border-bottom: 0;
+}
+.sk-rank {
+  width: 18px;
+  height: 16px;
+}
+.sk-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sk-lines {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+}
+.sk-line {
+  height: 12px;
+  max-width: 100%;
+}
+.sk-short {
+  width: 80px;
+  height: 10px;
+}
+.sk-num {
+  width: 46px;
+  height: 22px;
+}
+@media (max-width: 720px) {
+  .result-count {
+    display: none;
+  }
+  .skeleton-row {
+    padding: 12px;
+  }
 }
 </style>
