@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api, type PlayerDetail, type PlayerWeek } from '../lib/api'
-import { injuryClass, matchup, SCORING_NAMES } from '../lib/format'
+import { injuryClass, matchup, points, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
 import { loadSummary, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
@@ -98,7 +98,7 @@ function line(w: PlayerWeek): string {
         <StatTile
           accent
           :label="`Week ${upcoming?.week ?? '–'} projection`"
-          :value="upcoming?.projected?.toFixed(1) ?? '–'"
+          :value="upcoming?.projected != null ? points(upcoming.projected) : '–'"
         >
           <template v-if="upcoming">
             {{ matchup(upcoming.opponent, upcoming.is_home) }}
@@ -111,10 +111,10 @@ function line(w: PlayerWeek): string {
           </template>
           <template v-else>No game projected this week</template>
         </StatTile>
-        <StatTile label="Season average" :value="player.season_avg?.toFixed(1) ?? '–'">
+        <StatTile label="Season average" :value="player.season_avg != null ? points(player.season_avg) : '–'">
           {{ player.games_played }} games played
         </StatTile>
-        <StatTile label="Best game" :value="Number.isFinite(best) ? best.toFixed(1) : '–'">
+        <StatTile label="Best game" :value="Number.isFinite(best) ? points(best) : '–'">
           Fantasy points this season
         </StatTile>
         <StatTile label="Our avg miss" :value="avgMiss !== null ? `±${avgMiss.toFixed(1)}` : '–'">
@@ -152,9 +152,9 @@ function line(w: PlayerWeek): string {
                     {{ w.opponent }}
                   </span>
                 </td>
-                <td class="text-right">{{ w.projected?.toFixed(1) ?? '–' }}</td>
+                <td class="text-right">{{ w.projected !== null ? points(w.projected) : '–' }}</td>
                 <td class="text-right">
-                  <strong v-if="w.actual !== null" :class="deltaClass(w)">{{ w.actual.toFixed(1) }}</strong>
+                  <strong v-if="w.actual !== null" :class="deltaClass(w)">{{ points(w.actual) }}</strong>
                   <span v-else class="text-muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
                 </td>
                 <td class="text-[13px] text-muted max-tab:hidden">{{ line(w) }}</td>

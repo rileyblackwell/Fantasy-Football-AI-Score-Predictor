@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { featureLabel, injuryClass, injuryShort, matchup, relativeTime } from './format'
+import { featureLabel, injuryClass, injuryShort, matchup, points, relativeTime, signedPoints } from './format'
 
 describe('format helpers', () => {
+  it('never shows negative zero', () => {
+    expect(points(-0.04)).toBe('0.0')
+    expect(points(-0)).toBe('0.0')
+    expect(points(-1.25)).toBe('-1.3')
+    expect(points(12.345, 2)).toBe('12.35')
+    expect(signedPoints(-0.02)).toBe('0.0')
+    expect(signedPoints(3.21)).toBe('+3.2')
+    expect(signedPoints(-3.21)).toBe('-3.2')
+  })
+
   it('formats home and away matchups', () => {
     expect(matchup('DAL', true)).toBe('vs DAL')
     expect(matchup('DAL', false)).toBe('@ DAL')
