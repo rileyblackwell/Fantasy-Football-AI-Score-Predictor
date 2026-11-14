@@ -14,10 +14,12 @@ The original scraper and PyTorch notebook live in [`legacy/`](legacy/) for refer
 
 ## How predictions are made
 
-1. `ingest` downloads regular-season box scores since 2016 (players, plus team defense stats scored with standard D/ST rules: sacks, turnovers, TDs, safeties, blocked kicks and points-allowed tiers) plus the current season's schedule, rosters and injury reports.
+1. `ingest` downloads regular-season box scores since 2016 (players, plus team defense stats scored with standard D/ST rules: sacks, turnovers, TDs, safeties, blocked kicks and points-allowed tiers) plus schedules, injury reports, offensive snap counts, nflverse's expected fantasy points (ffopportunity) and player bios (birth date, draft slot), and the current season's rosters.
 2. `features.py` builds one row per player-week using only information from *before* that week: recent scoring
-   (last 1/3/5/10 games, season average, last season), usage (targets, carries, pass attempts, target share), Vegas
-   implied team total and spread, and how many points the opponent has allowed to that position.
+   (last 1/3/5/10/20 games, a weighted recent average, season, last season, last two seasons and career averages),
+   usage (targets, carries, pass attempts, target share, snap share, air yards, expected points), Vegas implied team
+   total and spread, how many points the opponent has allowed to that position, this week's injury report (the
+   player's own status and the recent workload of teammates ruled out), and age, years in the league and draft slot.
 3. `modeling.py` trains two LightGBM models (PPR and standard; half-PPR is their average) with Huber loss.
 4. `pipeline.py`
    - scores a model trained on earlier seasons against the last full season (shown on the "How it works" page),

@@ -31,6 +31,10 @@ class Player(models.Model):
     team = models.CharField(max_length=4, blank=True, db_index=True)
     headshot_url = models.URLField(max_length=300, blank=True)
     roster_status = models.CharField(max_length=10, blank=True)
+    # Career context for the model (empty for team defenses and players nflverse has no bio for).
+    birth_date = models.DateField(null=True, blank=True)
+    rookie_season = models.PositiveSmallIntegerField(null=True, blank=True)
+    draft_pick = models.PositiveSmallIntegerField(null=True, blank=True)
 
     def __str__(self) -> str:
         return f"{self.name} ({self.position}, {self.team})"
@@ -80,6 +84,11 @@ class WeeklyStat(models.Model):
     receiving_yards = models.SmallIntegerField(default=0)
     receiving_tds = models.SmallIntegerField(default=0)
     target_share = models.FloatField(null=True)
+    # Usage detail for the model: share of the team's offensive snaps (0-1), expected PPR points from
+    # the volume and location of the player's looks, and air yards on targets.
+    offense_snap_pct = models.FloatField(null=True)
+    expected_ppr = models.FloatField(null=True)
+    air_yards = models.FloatField(null=True)
     # Team defense / special teams (only set for DST rows)
     def_sacks = models.FloatField(default=0)
     def_interceptions = models.SmallIntegerField(default=0)

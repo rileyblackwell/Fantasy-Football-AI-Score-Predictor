@@ -196,7 +196,9 @@ def clean_schedule(raw: pd.DataFrame) -> pd.DataFrame:
 
 def clean_injuries(raw: pd.DataFrame) -> pd.DataFrame:
     """One row per player-week with the most severe official game status."""
-    df = raw[(raw["season_type"] == "REG") & raw["gsis_id"].notna()].copy()
+    # nflverse only fills season_type from 2025 on; game_type covers every season.
+    kind = raw["game_type"] if "game_type" in raw else raw["season_type"]
+    df = raw[(kind == "REG") & raw["gsis_id"].notna()].copy()
     df = df[df["report_status"].isin(INJURY_SEVERITY)]
     df["severity"] = df["report_status"].map(INJURY_SEVERITY)
     df = df.sort_values("severity").drop_duplicates(["gsis_id", "season", "week"])
@@ -204,6 +206,50 @@ def clean_injuries(raw: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns={"gsis_id": "player_id", "report_status": "status"})[
         ["player_id", "season", "week", "status", "injury"]
     ].reset_index(drop=True)
+
+
+def clean_players(raw: pd.DataFrame) -> pd.DataFrame:
+    """Bio details from the nflverse players table: birth date, rookie season, draft slot and the
+    Pro Football Reference id (used to match snap counts)."""
+    df = raw[raw["gsis_id"].notna()].drop_duplicates("gsis_id").copy()
+    df["birth_date"] = pd.to_datetime(df["birth_date"], errors="coerce").dt.date
+    for col in ["rookie_season", "draft_pick"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    return df.rename(columns={"gsis_id": "player_id", "pfr_id": "pfr_player_id"})[
+        ["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"]
+    ].reset_index(drop=True)
+
+
+def clean_snap_counts(raw: pd.DataFrame, players: pd.DataFrame) -> pd.DataFrame:
+    """Regular-season offensive snap share per player-week, keyed by GSIS id."""
+    df = raw[raw["game_type"] == "REG"]
+    ids = players[["player_id", "pfr_player_id"]].dropna().drop_duplicates("pfr_player_id")
+    df = df.merge(ids, on="pfr_player_id")
+    df = df.assign(offense_snap_pct=pd.to_numeric(df["offense_pct"], errors="coerce"))
+    df = df.sort_values("offense_snap_pct").drop_duplicates(["player_id", "season", "week"], keep="last")
+    return df[["player_id", "season", "week", "offense_snap_pct"]].astype({"season": int, "week": int}).reset_index(drop=True)
+
+
+def clean_ff_opportunity(raw: pd.DataFrame) -> pd.DataFrame:
+    """Expected PPR points and receiving air yards per player-week from nflverse's ffopportunity model."""
+    df = raw[raw["player_id"].notna()].copy()
+    df["season"] = pd.to_numeric(df["season"], errors="coerce")
+    df["week"] = pd.to_numeric(df["week"], errors="coerce")
+    df = df.dropna(subset=["season", "week"]).astype({"season": int, "week": int})
+    df["expected_ppr"] = pd.to_numeric(df["total_fantasy_points_exp"], errors="coerce")
+    df["air_yards"] = pd.to_numeric(df["rec_air_yards"], errors="coerce")
+    df = df.drop_duplicates(["player_id", "season", "week"], keep="last")
+    return df[["player_id", "season", "week", "expected_ppr", "air_yards"]].reset_index(drop=True)
+
+
+def add_usage(stats: pd.DataFrame, snaps: pd.DataFrame, opportunity: pd.DataFrame) -> pd.DataFrame:
+    """Attach snap share and expected points to the weekly stat rows (missing stays NaN)."""
+    keys = ["player_id", "season", "week"]
+    out = stats.drop(columns=[c for c in USAGE_EXTRA if c in stats]).merge(snaps, on=keys, how="left")
+    return out.merge(opportunity, on=keys, how="left")
+
+
+USAGE_EXTRA = ["offense_snap_pct", "expected_ppr", "air_yards"]
 
 
 def clean_rosters(raw: pd.DataFrame) -> pd.DataFrame:
@@ -244,12 +290,41 @@ def load_schedule(seasons: list[int]) -> pd.DataFrame:
     return clean_schedule(_nfl().load_schedules(seasons).to_pandas())
 
 
-def load_injuries(season: int) -> pd.DataFrame:
-    try:
-        return clean_injuries(_nfl().load_injuries([season]).to_pandas())
-    except Exception:  # injury data for a new season can lag behind; predictions still work without it
-        logger.warning("Injury data unavailable for %s", season, exc_info=True)
+def load_injuries(seasons: list[int]) -> pd.DataFrame:
+    """Injury reports for the given seasons. The model learns from past reports, so history is kept."""
+    frames = []
+    for season in seasons:
+        try:
+            frames.append(clean_injuries(_nfl().load_injuries([season]).to_pandas()))
+        except Exception:  # injury data for a new season can lag behind; predictions still work without it
+            logger.warning("Injury data unavailable for %s", season, exc_info=True)
+    if not frames:
         return pd.DataFrame(columns=["player_id", "season", "week", "status", "injury"])
+    return pd.concat(frames, ignore_index=True)
+
+
+def load_players() -> pd.DataFrame:
+    try:
+        return clean_players(_nfl().load_players().to_pandas())
+    except Exception:
+        logger.warning("Player bios unavailable", exc_info=True)
+        return pd.DataFrame(columns=["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"])
+
+
+def load_snap_counts(seasons: list[int], players: pd.DataFrame) -> pd.DataFrame:
+    try:
+        return clean_snap_counts(_nfl().load_snap_counts(seasons).to_pandas(), players)
+    except Exception:  # the model treats missing snap shares as unknown
+        logger.warning("Snap counts unavailable for %s", seasons, exc_info=True)
+        return pd.DataFrame(columns=["player_id", "season", "week", "offense_snap_pct"])
+
+
+def load_ff_opportunity(seasons: list[int]) -> pd.DataFrame:
+    try:
+        return clean_ff_opportunity(_nfl().load_ff_opportunity(seasons).to_pandas())
+    except Exception:  # the current season's file can lag a day or two behind the box scores
+        logger.warning("Expected points unavailable for %s", seasons, exc_info=True)
+        return pd.DataFrame(columns=["player_id", "season", "week", "expected_ppr", "air_yards"])
 
 
 def load_rosters(season: int) -> pd.DataFrame:
@@ -295,6 +370,9 @@ def store_weekly_stats(stats: pd.DataFrame, seasons: list[int]) -> int:
             opponent=r.opponent,
             position=r.position,
             target_share=_none_if_nan(r.target_share),
+            offense_snap_pct=_none_if_nan(getattr(r, "offense_snap_pct", None)),
+            expected_ppr=_none_if_nan(getattr(r, "expected_ppr", None)),
+            air_yards=_none_if_nan(getattr(r, "air_yards", None)),
             def_sacks=r.def_sacks,
             def_interceptions=r.def_interceptions,
             def_fumble_recoveries=r.def_fumble_recoveries,
@@ -378,9 +456,10 @@ def store_rosters(rosters: pd.DataFrame) -> int:
 
 
 @transaction.atomic
-def store_injuries(injuries: pd.DataFrame, season: int) -> int:
+def store_injuries(injuries: pd.DataFrame, seasons: int | list[int]) -> int:
+    seasons = [seasons] if isinstance(seasons, int) else list(seasons)
     known = set(Player.objects.values_list("player_id", flat=True))
-    InjuryReport.objects.filter(season=season).delete()
+    InjuryReport.objects.filter(season__in=seasons).delete()
     rows = [
         InjuryReport(player_id=r.player_id, season=r.season, week=r.week, status=r.status, injury=r.injury)
         for r in injuries.itertuples()
@@ -390,17 +469,35 @@ def store_injuries(injuries: pd.DataFrame, season: int) -> int:
     return len(rows)
 
 
+@transaction.atomic
+def store_player_bios(players: pd.DataFrame) -> int:
+    """Fill birth date, rookie season and draft pick on players we already track."""
+    bios = players.dropna(subset=["player_id"]).drop_duplicates("player_id").set_index("player_id")
+    objs = []
+    for player in Player.objects.exclude(position="DST").filter(player_id__in=list(bios.index)):
+        bio = bios.loc[player.player_id]
+        player.birth_date = _none_if_nan(bio["birth_date"])
+        player.rookie_season = None if pd.isna(bio["rookie_season"]) else int(bio["rookie_season"])
+        player.draft_pick = None if pd.isna(bio["draft_pick"]) else int(bio["draft_pick"])
+        objs.append(player)
+    Player.objects.bulk_update(objs, ["birth_date", "rookie_season", "draft_pick"], batch_size=1000)
+    return len(objs)
+
+
 def ingest(seasons: list[int]) -> dict:
-    """Download and store everything for the given seasons. Rosters/injuries only matter for the latest."""
+    """Download and store everything for the given seasons. Rosters only matter for the latest."""
     latest = max(seasons)
     teams = load_teams()
     store_teams(teams)
     schedule = load_schedule(seasons)
+    players = load_players()
     stats = pd.concat([load_weekly_stats(seasons), load_dst_stats(seasons, schedule, teams)], ignore_index=True)
+    stats = add_usage(stats, load_snap_counts(seasons, players), load_ff_opportunity(seasons))
     n_stats = store_weekly_stats(stats, seasons)
+    store_player_bios(players)
     n_games = store_schedule(schedule)
     n_roster = store_rosters(load_rosters(latest))
-    n_inj = store_injuries(load_injuries(latest), latest)
+    n_inj = store_injuries(load_injuries(seasons), seasons)
     summary = {"stats": n_stats, "games": n_games, "roster_players": n_roster, "injuries": n_inj}
     logger.info("Ingested seasons %s: %s", seasons, summary)
     return summary
