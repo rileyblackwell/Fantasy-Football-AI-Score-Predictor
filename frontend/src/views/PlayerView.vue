@@ -9,6 +9,8 @@ import PlayerAvatar from '../components/PlayerAvatar.vue'
 import PosChip from '../components/PosChip.vue'
 import TeamLogo from '../components/TeamLogo.vue'
 import WeekChart from './WeekChart.vue'
+import StatTile from '../components/StatTile.vue'
+import StateMessage from '../components/StateMessage.vue'
 
 const route = useRoute()
 const player = ref<PlayerDetail | null>(null)
@@ -37,6 +39,11 @@ const avgMiss = computed(() =>
 )
 const best = computed(() => Math.max(...(player.value?.weeks ?? []).map((w) => w.actual ?? -Infinity)))
 
+function deltaClass(w: PlayerWeek) {
+  if (w.actual === null || w.projected === null) return ''
+  return w.actual >= w.projected ? 'text-good' : 'text-bad'
+}
+
 function line(w: PlayerWeek): string {
   if (!w.line || !player.value) return ''
   const pos = player.value.position
@@ -49,94 +56,108 @@ function line(w: PlayerWeek): string {
 
 <template>
   <section>
-    <RouterLink to="/" class="back">← All projections</RouterLink>
-    <div v-if="error" class="card state state-error" role="alert">
-      <span class="state-icon" aria-hidden="true">!</span>
-      <span class="state-title">Couldn't load this player</span>
-      <span>{{ error }}</span>
+    <RouterLink
+      to="/"
+      class="mb-3.5 inline-flex items-center gap-1.5 text-[14px] font-semibold text-muted no-underline transition-[color,gap] duration-150 hover:gap-[9px] hover:text-accent"
+      >← All projections</RouterLink
+    >
+    <div v-if="error" class="card">
+      <StateMessage kind="error" title="Couldn't load this player">
+        <span>{{ error }}</span>
+      </StateMessage>
     </div>
-    <div v-else-if="!player" class="card state" aria-busy="true">
-      <span class="spinner" aria-hidden="true" />
-      Loading player…
+    <div v-else-if="!player" class="card">
+      <StateMessage kind="loading">Loading player…</StateMessage>
     </div>
     <template v-else>
       <div
-        class="banner"
-        :style="{ '--team': teamInfo?.color || 'var(--hero-to)', '--team2': teamInfo?.color2 || 'var(--hero-from)' }"
+        class="relative flex items-center gap-[22px] overflow-hidden rounded-hero px-8 py-7 text-white shadow-card max-tab:gap-3.5 max-tab:px-[18px] max-tab:py-5
+          bg-[linear-gradient(120deg,color-mix(in_srgb,var(--team)_92%,#000),color-mix(in_srgb,var(--team)_55%,#000))]
+          after:pointer-events-none after:absolute after:inset-0 after:bg-[repeating-linear-gradient(135deg,transparent_0_18px,rgb(255_255_255/4%)_18px_19px)] after:content-['']"
+        :style="{ '--team': teamInfo?.color || 'var(--hero-to)' }"
       >
         <PlayerAvatar :src="player.headshot_url" :name="player.name" :team-abbr="player.team" :size="92" />
-        <div class="banner-body">
-          <div class="eyebrow banner-eyebrow">
-            <PosChip :pos="player.position" />
+        <div class="relative z-1 min-w-0 flex-1">
+          <div class="eyebrow flex items-center gap-2 text-white/80!">
+            <PosChip :pos="player.position" on-dark />
             {{ teamInfo?.name ?? player.team }}
           </div>
-          <h1 class="banner-name">{{ player.name }}</h1>
-          <div class="banner-sub">{{ player.season }} season · {{ SCORING_NAMES[scoring] }}</div>
+          <h1 class="my-1.5 font-display text-[clamp(34px,6vw,54px)] leading-[0.95] font-extrabold uppercase">
+            {{ player.name }}
+          </h1>
+          <div class="text-[14px] text-white/75">{{ player.season }} season · {{ SCORING_NAMES[scoring] }}</div>
         </div>
-        <TeamLogo :abbr="player.team" :size="84" class="banner-logo" />
+        <TeamLogo
+          :abbr="player.team"
+          :size="84"
+          class="relative z-1 drop-shadow-[0_4px_12px_rgb(0_0_0/30%)] max-tab:hidden"
+        />
       </div>
 
-      <div class="tiles">
-        <div class="card tile tile-accent">
-          <div class="tile-label">Week {{ upcoming?.week ?? '–' }} projection</div>
-          <div class="tile-value">{{ upcoming?.projected?.toFixed(1) ?? '–' }}</div>
-          <div v-if="upcoming" class="tile-note">
+      <div class="mt-[18px] grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3.5">
+        <StatTile
+          accent
+          :label="`Week ${upcoming?.week ?? '–'} projection`"
+          :value="upcoming?.projected?.toFixed(1) ?? '–'"
+        >
+          <template v-if="upcoming">
             {{ matchup(upcoming.opponent, upcoming.is_home) }}
-            <span v-if="upcoming.injury_status" class="badge" :class="injuryClass(upcoming.injury_status)">{{ upcoming.injury_status }}</span>
-          </div>
-          <div v-else class="tile-note">No game projected this week</div>
-        </div>
-        <div class="card tile">
-          <div class="tile-label">Season average</div>
-          <div class="tile-value">{{ player.season_avg?.toFixed(1) ?? '–' }}</div>
-          <div class="tile-note">{{ player.games_played }} games played</div>
-        </div>
-        <div class="card tile">
-          <div class="tile-label">Best game</div>
-          <div class="tile-value">{{ Number.isFinite(best) ? best.toFixed(1) : '–' }}</div>
-          <div class="tile-note">Fantasy points this season</div>
-        </div>
-        <div class="card tile">
-          <div class="tile-label">Our avg miss</div>
-          <div class="tile-value">{{ avgMiss !== null ? `±${avgMiss.toFixed(1)}` : '–' }}</div>
-          <div class="tile-note">Projection vs actual this season</div>
-        </div>
+            <span
+              v-if="upcoming.injury_status"
+              class="ml-1.5 inline-block rounded-sm px-[5px] py-px align-[1px] text-[10.5px] font-extrabold tracking-[0.03em]"
+              :class="injuryClass(upcoming.injury_status)"
+              >{{ upcoming.injury_status }}</span
+            >
+          </template>
+          <template v-else>No game projected this week</template>
+        </StatTile>
+        <StatTile label="Season average" :value="player.season_avg?.toFixed(1) ?? '–'">
+          {{ player.games_played }} games played
+        </StatTile>
+        <StatTile label="Best game" :value="Number.isFinite(best) ? best.toFixed(1) : '–'">
+          Fantasy points this season
+        </StatTile>
+        <StatTile label="Our avg miss" :value="avgMiss !== null ? `±${avgMiss.toFixed(1)}` : '–'">
+          Projection vs actual this season
+        </StatTile>
       </div>
 
-      <div class="card section">
+      <div class="card mt-[18px] px-6 py-[22px] max-tab:px-4 max-tab:py-[18px]">
         <h2 class="section-title">Projected vs actual</h2>
         <WeekChart :weeks="player.weeks" />
       </div>
 
-      <div class="card section section-flush">
-        <h2 class="section-title">Game log</h2>
-        <div class="table-wrap">
-          <table>
+      <div class="card mt-[18px] pt-[22px] pb-1.5 max-tab:pt-[18px] max-tab:pb-1">
+        <h2 class="section-title px-6 max-tab:px-4">Game log</h2>
+        <div class="overflow-x-auto">
+          <table class="data-table">
             <thead>
               <tr>
                 <th>Wk</th>
                 <th>Opponent</th>
-                <th class="num">Proj</th>
-                <th class="num">Actual</th>
-                <th class="hide-sm">Stat line</th>
+                <th class="text-right">Proj</th>
+                <th class="text-right">Actual</th>
+                <th class="max-tab:hidden">Stat line</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="w in player.weeks" :key="w.week">
-                <td class="rank">{{ w.week }}</td>
+                <td class="w-11 font-display text-[17px] font-bold text-muted max-tab:w-[30px] max-tab:text-[15px]">
+                  {{ w.week }}
+                </td>
                 <td>
-                  <span class="matchup">
-                    <span class="muted">{{ w.is_home === null ? '' : w.is_home ? 'vs' : '@' }}</span>
+                  <span class="inline-flex items-center gap-2 font-semibold text-muted">
+                    <span>{{ w.is_home === null ? '' : w.is_home ? 'vs' : '@' }}</span>
                     <TeamLogo :abbr="w.opponent" :size="22" />
                     {{ w.opponent }}
                   </span>
                 </td>
-                <td class="num">{{ w.projected?.toFixed(1) ?? '–' }}</td>
-                <td class="num">
-                  <strong v-if="w.actual !== null" :class="w.projected !== null ? (w.actual >= w.projected ? 'delta-good' : 'delta-bad') : ''">{{ w.actual.toFixed(1) }}</strong>
-                  <span v-else class="muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
+                <td class="text-right">{{ w.projected?.toFixed(1) ?? '–' }}</td>
+                <td class="text-right">
+                  <strong v-if="w.actual !== null" :class="deltaClass(w)">{{ w.actual.toFixed(1) }}</strong>
+                  <span v-else class="text-muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
                 </td>
-                <td class="hide-sm muted stat-line">{{ line(w) }}</td>
+                <td class="text-[13px] text-muted max-tab:hidden">{{ line(w) }}</td>
               </tr>
             </tbody>
           </table>
@@ -145,78 +166,3 @@ function line(w: PlayerWeek): string {
     </template>
   </section>
 </template>
-
-<style scoped>
-.banner {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 28px 32px;
-  border-radius: var(--radius-lg);
-  color: #fff;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--team) 92%, #000), color-mix(in srgb, var(--team) 55%, #000));
-  box-shadow: var(--shadow);
-}
-.banner::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(135deg, transparent 0 18px, rgb(255 255 255 / 4%) 18px 19px);
-  pointer-events: none;
-}
-.banner-body {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-}
-.banner-eyebrow {
-  color: rgb(255 255 255 / 80%);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.banner-eyebrow :deep(.pos-chip) {
-  color: #fff;
-  background: rgb(255 255 255 / 16%);
-  border-color: rgb(255 255 255 / 30%);
-}
-.banner-name {
-  font-family: var(--font-display);
-  font-size: clamp(34px, 6vw, 54px);
-  font-weight: 800;
-  text-transform: uppercase;
-  line-height: 0.95;
-  margin: 6px 0;
-}
-.banner-sub {
-  color: rgb(255 255 255 / 75%);
-  font-size: 14px;
-}
-.banner-logo {
-  position: relative;
-  z-index: 1;
-  filter: drop-shadow(0 4px 12px rgb(0 0 0 / 30%));
-}
-.tile-accent {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 70%, var(--surface)), var(--surface) 75%);
-}
-.tile-accent .tile-value {
-  color: var(--accent);
-}
-.stat-line {
-  font-size: 13px;
-}
-@media (max-width: 720px) {
-  .banner {
-    padding: 20px 18px;
-    gap: 14px;
-  }
-  .banner-logo {
-    display: none;
-  }
-}
-</style>
