@@ -4,7 +4,6 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PredictionRow } from '../lib/api'
 import { injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
-import { topThree } from '../lib/spotlight'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
 import PosChip from '../components/PosChip.vue'
@@ -88,9 +87,6 @@ const positionRank = computed(() => {
 const visible = computed(() => [...filtered.value].sort(sorters[sortKey.value]))
 const shown = computed(() => visible.value.slice(0, limit.value))
 const remaining = computed(() => visible.value.length - shown.value.length)
-// Past weeks with results lead with who actually scored the most; the upcoming week leads with projections.
-const spotlightByActual = computed(() => isPastWeek.value && showActual.value)
-const spotlight = computed(() => topThree(filtered.value, spotlightByActual.value))
 const maxProjection = computed(() => Math.max(1, ...rows.value.map((r) => r.projected)))
 
 async function loadRows() {
@@ -197,38 +193,6 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
       </template>
     </PageHero>
 
-    <div
-      v-if="spotlight.length && !loading && !error"
-      class="mt-[18px] grid grid-cols-1 gap-3.5 lg:grid-cols-3"
-    >
-      <RouterLink
-        v-for="(row, i) in spotlight"
-        :key="row.player_id"
-        :to="`/players/${row.player_id}`"
-        class="card relative flex items-center gap-3.5 overflow-hidden px-[18px] py-4 text-fg no-underline transition-[translate,box-shadow,border-color] duration-[180ms] ease-snap
-          before:absolute before:inset-y-0 before:left-0 before:w-[5px] before:bg-(--team) before:content-['']
-          after:pointer-events-none after:absolute after:-top-[40%] after:-right-[20%] after:size-40 after:rounded-full after:bg-[radial-gradient(circle,color-mix(in_srgb,var(--team)_22%,transparent),transparent_70%)] after:content-['']
-          hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--team)_35%,var(--border))]! hover:shadow-card-hover!
-          focus-visible:-translate-y-0.5 focus-visible:border-[color-mix(in_srgb,var(--team)_35%,var(--border))]! focus-visible:shadow-card-hover!"
-        :style="{ '--team': team(row.team)?.color || 'var(--accent)' }"
-      >
-        <PlayerAvatar :src="row.headshot_url" :name="row.name" :team-abbr="row.team" :size="56" />
-        <span class="flex min-w-0 flex-1 flex-col">
-          <span class="font-display text-[13px] leading-none font-extrabold tracking-[0.06em] text-muted">#{{ i + 1 }}</span>
-          <span class="mt-1 leading-tight font-extrabold [overflow-wrap:anywhere]">{{ row.name }}</span>
-          <span :class="meta">
-            <PosChip :pos="row.position" />
-            {{ row.is_home ? 'vs' : '@' }} {{ row.opponent }}
-          </span>
-        </span>
-        <span class="shrink-0 text-right font-display text-[40px] leading-none font-extrabold text-accent tabular-nums">
-          {{ points(spotlightByActual ? (row.actual ?? 0) : row.projected) }}
-          <small class="block text-[12px] tracking-[0.08em] text-muted uppercase">{{
-            spotlightByActual ? 'pts scored' : 'pts'
-          }}</small>
-        </span>
-      </RouterLink>
-    </div>
 
     <div
       class="sticky top-(--header-h,60px) z-10 -mx-2 mt-4 mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-2.5 bg-bg/88 px-2 py-2.5 backdrop-blur-md"
