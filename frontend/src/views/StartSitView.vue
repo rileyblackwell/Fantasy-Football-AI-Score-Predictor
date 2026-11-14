@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PlayerDetail, type PredictionRow } from '../lib/api'
-import { injuryClass, injuryShort, points, SCORING_NAMES } from '../lib/format'
+import { byeFlag, injuryClass, injuryShort, points, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import { MAX_PICKS, parsePicks, recentGames, recommend } from '../lib/startSit'
@@ -51,6 +51,7 @@ const cards = computed(() =>
       row,
       detail,
       name: row?.name ?? detail?.name ?? 'Loading…',
+      bye: row ? byeFlag(row.bye_week, current.value.week) : null,
       recent: detail && detail.season === current.value.season ? recentGames(detail.weeks, current.value.week) : [],
     }
   }),
@@ -259,6 +260,14 @@ const BADGES = {
                 {{ card.row.is_home ? 'vs' : '@' }}
                 <TeamLogo :abbr="card.row.opponent" :size="22" />
                 {{ team(card.row.opponent)?.name ?? card.row.opponent }}
+              </div>
+              <div
+                v-if="card.bye"
+                class="mt-2 self-start rounded-sm px-[6px] py-px text-[11px] font-extrabold tracking-[0.03em] uppercase"
+                :class="card.bye.soon ? 'bg-accent-soft text-accent' : 'bg-surface-2 text-muted'"
+                :title="card.bye.title"
+              >
+                {{ card.bye.label }}
               </div>
               <div class="mt-3" :class="statLabel">Projected</div>
               <div class="font-display text-[44px] leading-none font-extrabold tabular-nums">

@@ -16,6 +16,7 @@ function row(id: string, name: string, projected: number, extra: Partial<Predict
     recent_avg_ppr: null,
     injury_status: null,
     injury: null,
+    bye_week: null,
     actual: null,
     is_backtest: false,
     ...extra,
