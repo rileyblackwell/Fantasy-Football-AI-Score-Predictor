@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PredictionRow } from '../lib/api'
-import { injuryClass, injuryShort, relativeTime, SCORING_NAMES } from '../lib/format'
+import { injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
 import { topThree } from '../lib/spotlight'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
@@ -13,15 +13,28 @@ import PageHero from '../components/PageHero.vue'
 import StateMessage from '../components/StateMessage.vue'
 
 type SortKey = 'projected' | 'recent' | 'name' | 'team' | 'actual'
+const SORT_KEYS: SortKey[] = ['projected', 'recent', 'name', 'team', 'actual']
+const PAGE_SIZE = 50
+
+const route = useRoute()
+const router = useRouter()
+
+// Filters start from the URL (?week=2026-9&pos=WR&q=chase&sort=name) so refresh and Back keep them.
+function queryValue(key: string): string {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+const initialSort = queryValue('sort') as SortKey
 
 const rows = ref<PredictionRow[]>([])
 const loading = ref(true)
 const error = ref('')
-const position = ref('ALL')
-const search = ref('')
+const position = ref(queryValue('pos').toUpperCase() || 'ALL')
+const search = ref(queryValue('q'))
 const hideOut = ref(true)
-const sortKey = ref<SortKey>('projected')
+const sortKey = ref<SortKey>(SORT_KEYS.includes(initialSort) ? initialSort : 'projected')
 const selectedWeek = ref('')
+const limit = ref(PAGE_SIZE)
 
 const targetKey = computed(() => (summary.value?.season ? `${summary.value.season}-${summary.value.week}` : ''))
 
@@ -73,6 +86,8 @@ const positionRank = computed(() => {
 })
 
 const visible = computed(() => [...filtered.value].sort(sorters[sortKey.value]))
+const shown = computed(() => visible.value.slice(0, limit.value))
+const remaining = computed(() => visible.value.length - shown.value.length)
 // Past weeks with results lead with who actually scored the most; the upcoming week leads with projections.
 const spotlightByActual = computed(() => isPastWeek.value && showActual.value)
 const spotlight = computed(() => topThree(filtered.value, spotlightByActual.value))
@@ -92,11 +107,33 @@ async function loadRows() {
 }
 
 loadSummary().then((s) => {
-  if (s?.season && s.week) selectedWeek.value = `${s.season}-${s.week}`
-  else loading.value = false
+  if (!s?.season || !s.week) {
+    loading.value = false
+    return
+  }
+  const fromUrl = queryValue('week')
+  const known = (s.weeks ?? []).some((w) => `${w.season}-${w.week}` === fromUrl)
+  selectedWeek.value = known ? fromUrl : `${s.season}-${s.week}`
+  if (position.value !== 'ALL' && !(s.positions ?? []).includes(position.value)) position.value = 'ALL'
 })
 
 watch([selectedWeek, scoring], loadRows)
+
+// Mirror the filters into the URL without adding history entries.
+watch([selectedWeek, position, search, sortKey], () => {
+  if (!selectedWeek.value) return
+  const query: Record<string, string> = {}
+  if (selectedWeek.value !== targetKey.value) query.week = selectedWeek.value
+  if (position.value !== 'ALL') query.pos = position.value
+  if (search.value.trim()) query.q = search.value.trim()
+  if (sortKey.value !== 'projected') query.sort = sortKey.value
+  router.replace({ query })
+})
+
+// Start from the top of the list whenever the filters change.
+watch([selectedWeek, position, search, sortKey, hideOut, scoring], () => {
+  limit.value = PAGE_SIZE
+})
 watch(isPastWeek, (past) => {
   if (!past && sortKey.value === 'actual') sortKey.value = 'projected'
 })
@@ -117,13 +154,17 @@ const statLabel = 'mt-1 text-[12px] tracking-[0.08em] text-hero-muted uppercase'
 const meta = 'mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted'
 const rankCell = 'w-11 font-display text-[17px] font-bold text-muted max-tab:w-[30px] max-tab:text-[15px]'
 const projection = 'font-display text-[24px] leading-none font-extrabold tabular-nums max-tab:text-[20px]'
+const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-middle'
 </script>
 
 <template>
   <section>
-    <PageHero :eyebrow="`${current.season || ''} season · ${SCORING_NAMES[scoring]} scoring`">
+    <PageHero :eyebrow="current.season ? `${current.season} season · ${SCORING_NAMES[scoring]} scoring` : `${SCORING_NAMES[scoring]} scoring`">
       <template #title>
-        Week <span>{{ current.week || '–' }}</span> projections
+        Week
+        <span v-if="current.week">{{ current.week }}</span>
+        <span v-else :class="heroSkeleton" class="h-[0.75em] w-[1.1em]" aria-label="Loading week" />
+        projections
       </template>
       <p v-if="isPastWeek">This week is in the books. Here's what we projected next to what actually happened.</p>
       <p v-else>
@@ -135,7 +176,10 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
           class="mt-[22px] flex flex-wrap gap-x-9 gap-y-3 border-t border-white/12 pt-[18px] max-tab:gap-x-5 [&>div+div]:border-l [&>div+div]:border-white/12 [&>div+div]:pl-9 max-tab:[&>div+div]:border-l-0 max-tab:[&>div+div]:pl-0"
         >
           <div>
-            <div :class="statValue">{{ rows.length || '–' }}</div>
+            <div :class="statValue">
+              <span v-if="!loading">{{ rows.length || '–' }}</span>
+              <span v-else :class="heroSkeleton" class="h-[30px] w-14" />
+            </div>
             <div :class="statLabel">Players projected</div>
           </div>
           <div v-if="summary?.model?.metrics?.model_mae">
@@ -143,7 +187,10 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
             <div :class="statLabel">Avg miss, {{ summary.model.metrics.holdout_season }} test</div>
           </div>
           <div>
-            <div :class="statValue">{{ relativeTime(summary?.last_refreshed ?? null) }}</div>
+            <div :class="statValue">
+              <span v-if="summary">{{ relativeTime(summary.last_refreshed) }}</span>
+              <span v-else :class="heroSkeleton" class="h-[30px] w-24" />
+            </div>
             <div :class="statLabel">Last updated</div>
           </div>
         </div>
@@ -152,7 +199,7 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
 
     <div
       v-if="spotlight.length && !loading && !error"
-      class="mt-[18px] grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3.5"
+      class="mt-[18px] grid grid-cols-1 gap-3.5 lg:grid-cols-3"
     >
       <RouterLink
         v-for="(row, i) in spotlight"
@@ -165,17 +212,17 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
           focus-visible:-translate-y-0.5 focus-visible:border-[color-mix(in_srgb,var(--team)_35%,var(--border))]! focus-visible:shadow-card-hover!"
         :style="{ '--team': team(row.team)?.color || 'var(--accent)' }"
       >
-        <span class="min-w-[26px] font-display text-[22px] font-extrabold text-muted">#{{ i + 1 }}</span>
         <PlayerAvatar :src="row.headshot_url" :name="row.name" :team-abbr="row.team" :size="56" />
         <span class="flex min-w-0 flex-1 flex-col">
-          <span class="truncate font-extrabold">{{ row.name }}</span>
+          <span class="font-display text-[13px] leading-none font-extrabold tracking-[0.06em] text-muted">#{{ i + 1 }}</span>
+          <span class="mt-1 leading-tight font-extrabold [overflow-wrap:anywhere]">{{ row.name }}</span>
           <span :class="meta">
             <PosChip :pos="row.position" />
             {{ row.is_home ? 'vs' : '@' }} {{ row.opponent }}
           </span>
         </span>
         <span class="shrink-0 text-right font-display text-[40px] leading-none font-extrabold text-accent tabular-nums">
-          {{ (spotlightByActual ? (row.actual ?? 0) : row.projected).toFixed(1) }}
+          {{ points(spotlightByActual ? (row.actual ?? 0) : row.projected) }}
           <small class="block text-[12px] tracking-[0.08em] text-muted uppercase">{{
             spotlightByActual ? 'pts scored' : 'pts'
           }}</small>
@@ -183,7 +230,9 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
       </RouterLink>
     </div>
 
-    <div class="mt-6 mb-3.5 flex flex-wrap items-center gap-x-3 gap-y-2.5">
+    <div
+      class="sticky top-(--header-h,60px) z-10 -mx-2 mt-4 mb-1.5 flex flex-wrap items-center gap-x-3 gap-y-2.5 bg-bg/88 px-2 py-2.5 backdrop-blur-md"
+    >
       <div
         class="inline-flex flex-wrap gap-1.5 max-tab:max-w-full max-tab:flex-nowrap max-tab:overflow-x-auto max-tab:[scrollbar-width:none]"
         role="tablist"
@@ -287,7 +336,7 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
           </thead>
           <tbody>
             <tr
-              v-for="(row, i) in visible"
+              v-for="(row, i) in shown"
               :key="row.player_id"
               class="group/row"
               :style="{ '--team': team(row.team)?.color || 'transparent' }"
@@ -327,21 +376,29 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
                   {{ row.opponent }}
                 </span>
               </td>
-              <td class="text-right text-muted max-tab:hidden">{{ row.recent_avg_ppr?.toFixed(1) ?? '–' }}</td>
+              <td class="text-right text-muted max-tab:hidden">
+                {{ row.recent_avg_ppr !== null ? points(row.recent_avg_ppr) : '–' }}
+              </td>
               <td class="text-right">
-                <div :class="projection">{{ row.projected.toFixed(1) }}</div>
+                <div :class="projection">{{ points(row.projected) }}</div>
                 <div
                   class="mt-1.5 ml-auto h-1 rounded-xs bg-bar"
                   :style="{ width: `${(row.projected / maxProjection) * 72}px` }"
                 />
               </td>
               <td v-if="showActual" class="text-right">
-                <span v-if="row.actual !== null" :class="[projection, diffClass(row)]">{{ row.actual.toFixed(1) }}</span>
+                <span v-if="row.actual !== null" :class="[projection, diffClass(row)]">{{ points(row.actual) }}</span>
                 <span v-else class="text-muted">{{ isPastWeek ? 'DNP' : '–' }}</span>
               </td>
             </tr>
           </tbody>
         </table>
+        <div v-if="remaining > 0" class="flex justify-center border-t border-line/70 px-5 py-4">
+          <button type="button" class="pill" @click="limit += PAGE_SIZE">
+            Show {{ Math.min(PAGE_SIZE, remaining) }} more
+            <span class="font-semibold text-muted">· {{ remaining }} left</span>
+          </button>
+        </div>
       </div>
     </div>
   </section>

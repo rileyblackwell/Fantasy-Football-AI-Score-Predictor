@@ -1,6 +1,18 @@
 export const SCORING_LABELS = { ppr: 'PPR', half: 'Half', std: 'Std' } as const
 export const SCORING_NAMES = { ppr: 'PPR', half: 'Half-PPR', std: 'Standard' } as const
 
+/** A points value to fixed decimals, never shown as "-0.0". */
+export function points(value: number, digits = 1): string {
+  const text = value.toFixed(digits)
+  return Number(text) === 0 ? (0).toFixed(digits) : text
+}
+
+/** A signed difference such as "+3.2" or "-1.4", with no sign on zero. */
+export function signedPoints(value: number, digits = 1): string {
+  const text = points(value, digits)
+  return Number(text) > 0 ? `+${text}` : text
+}
+
 export function matchup(opponent: string, isHome: boolean | null): string {
   if (isHome === null) return opponent
   return isHome ? `vs ${opponent}` : `@ ${opponent}`

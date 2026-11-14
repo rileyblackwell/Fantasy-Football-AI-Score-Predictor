@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { scoring } from './lib/store'
 import { SCORING_LABELS } from './lib/format'
 import { loadSummary } from './lib/summary'
@@ -9,11 +10,27 @@ const formats = Object.entries(SCORING_LABELS) as [Scoring, string][]
 const navLink =
   'whitespace-nowrap rounded-lg px-3 py-[7px] text-[14px] font-semibold text-muted no-underline transition-colors duration-150 hover:bg-surface-2 hover:text-fg'
 const navActive = 'bg-surface-3! text-fg!'
+const route = useRoute()
+
+// Publish the top bar's height so sticky toolbars can sit right under it, even when it wraps on phones.
+const header = ref<HTMLElement | null>(null)
+let observer: ResizeObserver | null = null
+onMounted(() => {
+  if (!header.value || typeof ResizeObserver === 'undefined') return
+  observer = new ResizeObserver(([entry]) => {
+    const height = Math.round(entry.target.getBoundingClientRect().height)
+    document.documentElement.style.setProperty('--header-h', `${height}px`)
+  })
+  observer.observe(header.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+
 loadSummary()
 </script>
 
 <template>
   <header
+    ref="header"
     class="sticky top-0 z-20 border-b border-line bg-surface/82 backdrop-blur-md backdrop-saturate-[160%]"
   >
     <div
@@ -38,7 +55,9 @@ loadSummary()
         <RouterLink to="/accuracy" :class="navLink" :active-class="navActive">Scorecard</RouterLink>
         <RouterLink to="/about" :class="navLink" :active-class="navActive">How it works</RouterLink>
       </nav>
+      <!-- The scorecard and model pages only use PPR, so the scoring switch is hidden there. -->
       <div
+        v-if="!route.meta.pprOnly"
         class="inline-flex rounded-control border border-line bg-surface-2 p-[3px]"
         role="radiogroup"
         aria-label="Scoring format"

@@ -2,8 +2,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { api, type Accuracy, type AccuracyPick } from '../lib/api'
-import { POSITION_NAMES } from '../lib/format'
-import { loadSummary } from '../lib/summary'
+import { points, POSITION_NAMES, signedPoints } from '../lib/format'
+import { loadSummary, summary } from '../lib/summary'
 import PosChip from '../components/PosChip.vue'
 import PageHero from '../components/PageHero.vue'
 import StatTile from '../components/StatTile.vue'
@@ -38,7 +38,12 @@ const pickName = 'group-hover:text-accent group-focus-visible:text-accent'
 const barLabel = 'absolute left-[calc(100%+6px)] text-[11px] font-bold whitespace-nowrap text-muted'
 
 function miss(p: AccuracyPick) {
-  return (p.actual - p.projected).toFixed(1)
+  return signedPoints(p.actual - p.projected)
+}
+
+// The upcoming week can already have a few graded games (Thursday night), so it is marked as in progress.
+function inProgress(week: number) {
+  return !!summary.value && summary.value.season === data.value?.season && summary.value.week === week
 }
 </script>
 
@@ -88,8 +93,15 @@ function miss(p: AccuracyPick) {
             :key="w.week"
             class="grid grid-cols-[48px_1fr_190px] items-center gap-3 max-tab:grid-cols-[40px_1fr]"
           >
-            <span class="font-display text-[16px] font-bold">Wk {{ w.week }}</span>
-            <span class="grid gap-[3px]">
+            <span class="font-display text-[16px] leading-tight font-bold">
+              Wk {{ w.week }}
+              <span
+                v-if="inProgress(w.week)"
+                class="block font-sans text-[10px] font-bold tracking-[0.06em] text-accent uppercase"
+                >In progress</span
+              >
+            </span>
+            <span class="grid gap-[3px]" :class="{ 'opacity-60': inProgress(w.week) }">
               <span class="relative h-3.5 min-w-[2px] rounded-sm bg-bar" :style="{ width: `${(w.mae / maxWeekMae) * 82}%` }">
                 <span :class="barLabel" class="-top-0.5">±{{ w.mae.toFixed(2) }}</span>
               </span>
@@ -103,7 +115,8 @@ function miss(p: AccuracyPick) {
             </span>
             <span
               class="text-right text-[12.5px] text-muted tabular-nums max-tab:col-start-2 max-tab:-mt-1 max-tab:text-left"
-              >{{ w.games }} games · {{ (w.within_5 * 100).toFixed(0) }}% within 5</span
+              >{{ w.games }} games{{ inProgress(w.week) ? ' so far' : '' }} ·
+              {{ (w.within_5 * 100).toFixed(0) }}% within 5</span
             >
           </div>
         </div>
@@ -158,8 +171,8 @@ function miss(p: AccuracyPick) {
               <span :class="meta"><PosChip :pos="p.position" /> Week {{ p.week }} · {{ p.team }}</span>
             </span>
             <span class="flex flex-col items-end text-[13px] tabular-nums">
-              <span class="text-muted">proj {{ p.projected.toFixed(1) }}</span>
-              <strong class="font-display text-[22px] leading-[1.1]">{{ p.actual.toFixed(1) }}</strong>
+              <span class="text-muted">proj {{ points(p.projected) }}</span>
+              <strong class="font-display text-[22px] leading-[1.1]">{{ points(p.actual) }}</strong>
             </span>
           </RouterLink>
         </div>
@@ -176,12 +189,9 @@ function miss(p: AccuracyPick) {
               <span :class="meta"><PosChip :pos="p.position" /> Week {{ p.week }} · {{ p.team }}</span>
             </span>
             <span class="flex flex-col items-end text-[13px] tabular-nums">
-              <span class="text-muted">proj {{ p.projected.toFixed(1) }} → {{ p.actual.toFixed(1) }}</span>
-              <strong
-                class="font-display text-[22px] leading-[1.1]"
-                :class="p.actual >= p.projected ? 'text-good' : 'text-bad'"
-                >{{ Number(miss(p)) > 0 ? '+' : '' }}{{ miss(p) }}</strong
-              >
+              <span class="text-muted">proj {{ points(p.projected) }} → {{ points(p.actual) }}</span>
+              <!-- Every row here is a miss, whichever way it went, so none of them show in green. -->
+              <strong class="font-display text-[22px] leading-[1.1] text-bad">{{ miss(p) }}</strong>
             </span>
           </RouterLink>
         </div>
