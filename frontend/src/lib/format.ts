@@ -30,6 +30,21 @@ export function injuryShort(status: string | null): string {
   return status === 'Questionable' ? 'Q' : status === 'Doubtful' ? 'D' : 'OUT'
 }
 
+export interface ByeFlag {
+  label: string
+  title: string
+  /** The bye is the week right after the one shown, the one a manager plans for next. */
+  soon: boolean
+}
+
+/** The bye flag for a player's row, or null when the bye has passed or isn't scheduled. */
+export function byeFlag(byeWeek: number | null, week: number | undefined): ByeFlag | null {
+  if (!byeWeek || !week || byeWeek <= week) return null
+  const title = `Team is on bye in Week ${byeWeek}`
+  if (byeWeek === week + 1) return { label: 'Bye next week', title, soon: true }
+  return { label: `Bye wk ${byeWeek}`, title, soon: false }
+}
+
 export function featureLabel(feature: string): string {
   const labels: Record<string, string> = {
     ppr_last1: 'Last game',

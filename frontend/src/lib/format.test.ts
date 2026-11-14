@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { featureLabel, injuryClass, injuryShort, matchup, points, relativeTime, signedPoints } from './format'
+import { byeFlag, featureLabel, injuryClass, injuryShort, matchup, points, relativeTime, signedPoints } from './format'
 
 describe('format helpers', () => {
   it('never shows negative zero', () => {
@@ -38,5 +38,22 @@ describe('format helpers', () => {
     expect(relativeTime('2026-11-13T11:30:00Z', now)).toBe('30 min ago')
     expect(relativeTime('2026-11-13T07:00:00Z', now)).toBe('5 hr ago')
     expect(relativeTime('2026-11-12T12:00:00Z', now)).toBe('1 day ago')
+  })
+})
+
+describe('byeFlag', () => {
+  it('flags a bye in the following week', () => {
+    expect(byeFlag(10, 9)).toEqual({ label: 'Bye next week', title: 'Team is on bye in Week 10', soon: true })
+  })
+
+  it('shows a later bye quietly', () => {
+    expect(byeFlag(12, 9)).toEqual({ label: 'Bye wk 12', title: 'Team is on bye in Week 12', soon: false })
+  })
+
+  it('hides byes that have passed or are unknown', () => {
+    expect(byeFlag(7, 9)).toBeNull()
+    expect(byeFlag(9, 9)).toBeNull()
+    expect(byeFlag(null, 9)).toBeNull()
+    expect(byeFlag(12, undefined)).toBeNull()
   })
 })
