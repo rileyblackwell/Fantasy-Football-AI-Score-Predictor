@@ -31,7 +31,7 @@ class Command(BaseCommand):
             return
         out = summary["newly_out"]
         message = (
-            f"Game-day injury check, {summary['season']} week {summary['week']}: "
+            f"Game-day injury check ({summary['source']}), {summary['season']} week {summary['week']}: "
             f"{len(summary['changed'])} status changes, {len(out)} newly Out"
             f"{' (' + ', '.join(out[:10]) + ')' if out else ''}, {summary['reprojected']} players re-projected. "
             f"{time.perf_counter() - start:.1f}s."

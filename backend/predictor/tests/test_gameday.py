@@ -1,3 +1,5 @@
+import io
+import json
 from datetime import datetime, timedelta
 from io import StringIO
 from unittest import mock
@@ -7,7 +9,14 @@ import pandas as pd
 from django.core.management import call_command
 from django.test import TestCase
 
-from predictor.gameday import game_windows, in_game_window, refresh_game_day
+from predictor.gameday import (
+    espn_athlete_id,
+    fetch_statuses,
+    game_windows,
+    in_game_window,
+    parse_espn_injuries,
+    refresh_game_day,
+)
 from predictor.ingest import clean_schedule, kickoff_times
 from predictor.models import Game, InjuryReport, Prediction, RefreshLog
 from predictor.pipeline import run_pipeline
@@ -27,11 +36,12 @@ MON = et(2026, 11, 16, 20, 15)
 WEEK = [THU, *SUNDAY, MON]
 
 
-def statuses(rows):
-    return pd.DataFrame(
+def statuses(rows, source="espn"):
+    frame = pd.DataFrame(
         [{"player_id": p, "season": 2025, "week": 4, "status": s, "injury": "Knee"} for p, s in rows],
         columns=["player_id", "season", "week", "status", "injury"],
     )
+    return frame, source
 
 
 class KickoffTimeTests(TestCase):
@@ -159,6 +169,7 @@ class InjuryRefreshCommandTests(TestCase):
         log = RefreshLog.objects.get()
         self.assertTrue(log.success)
         self.assertIn("1 newly Out (00-AAA-QB)", log.message)
+        self.assertIn("(espn)", log.message)
 
     def test_missing_kickoffs_load_the_schedule_once(self):
         Game.objects.update(kickoff=None)
@@ -175,3 +186,127 @@ class InjuryRefreshCommandTests(TestCase):
         with mock.patch("predictor.gameday.fetch_statuses", return_value=statuses([])):
             self.assertTrue(refresh_game_day(now=et(2025, 9, 28, 12, 0))["ran"])
             self.assertFalse(refresh_game_day(now=et(2025, 9, 28, 12, 0) + timedelta(days=1))["ran"])
+
+
+def espn_item(espn_id, status, injury="Knee", with_id=False):
+    """One injury item shaped like ESPN's feed (Nov 15, 2026): the athlete has no id field, so the id
+    is only in the note's reference, the page links and the headshot."""
+    athlete = {
+        "displayName": f"Player {espn_id}",
+        "links": [{"href": f"https://www.espn.com/nfl/player/_/id/{espn_id}/player"}],
+        "headshot": {"href": f"https://a.espncdn.com/i/headshots/nfl/players/full/{espn_id}.png"},
+        "notes": {"items": [{"injury": {"$ref": f"http://sports.core.api.espn.pvt/v2/sports/football/leagues/nfl/seasons/2026/athletes/{espn_id}/injuries/647675?lang=en"}}]},
+        "status": {"id": "1", "name": "Active"},
+    }
+    if with_id:
+        athlete["id"] = espn_id
+    return {
+        "id": "647675",
+        "status": status,
+        "date": "2026-11-14T02:25Z",
+        "athlete": athlete,
+        "type": {"name": "INJURY_STATUS_" + status.upper()},
+        "details": {"fantasyStatus": {"description": status.upper()}, "type": injury},
+    }
+
+
+def espn_feed(items, teams=32):
+    entries = [{"id": str(i), "displayName": f"Team {i}", "injuries": []} for i in range(teams)]
+    entries[0]["injuries"] = items
+    return {"timestamp": "2026-11-15T12:00:00Z", "status": "success", "injuries": entries}
+
+
+class EspnFeedTests(TestCase):
+    MAP = {"4709718": "00-0041113", "4240619": "00-0037804", "4367199": "00-0038571", "3886633": "00-0035258"}
+
+    def test_athlete_id_comes_from_the_note_links_or_headshot(self):
+        item = espn_item("4709718", "Out")
+        self.assertEqual(espn_athlete_id(item["athlete"]), "4709718")
+        self.assertEqual(espn_athlete_id({"headshot": {"href": "https://x/full/3886633.png"}}), "3886633")
+        self.assertEqual(espn_athlete_id(espn_item("1", "Out", with_id=True)["athlete"]), "1")
+        self.assertIsNone(espn_athlete_id({}))
+
+    def test_statuses_map_to_game_designations(self):
+        feed = espn_feed([
+            espn_item("4709718", "Questionable"),
+            espn_item("4240619", "Injured Reserve"),
+            espn_item("4367199", "Out", "Ankle"),
+            espn_item("3886633", "Day-To-Day"),  # not a game designation
+            espn_item("999", "Out"),  # not one of our players
+        ])
+        df = parse_espn_injuries(feed, self.MAP, 2026, 11)
+        got = dict(zip(df["player_id"], df["status"]))
+        self.assertEqual(got, {"00-0041113": "Questionable", "00-0037804": "Out", "00-0038571": "Out"})
+        self.assertEqual(df.set_index("player_id").loc["00-0038571", "injury"], "Ankle")
+        self.assertTrue((df["week"] == 11).all())
+
+    def test_most_severe_listing_wins(self):
+        feed = espn_feed([espn_item("4709718", "Questionable"), espn_item("4709718", "Out")])
+        self.assertEqual(parse_espn_injuries(feed, self.MAP, 2026, 11)["status"].tolist(), ["Out"])
+
+    def test_a_broken_response_is_not_used(self):
+        self.assertIsNone(parse_espn_injuries({}, self.MAP, 2026, 11))
+        self.assertIsNone(parse_espn_injuries({"injuries": "x"}, self.MAP, 2026, 11))
+        self.assertIsNone(parse_espn_injuries(espn_feed([espn_item("4709718", "Out")], teams=3), self.MAP, 2026, 11))
+
+
+class StatusSourceTests(TestCase):
+    def setUp(self):
+        populate_db()
+        from predictor.models import Player
+
+        Player.objects.filter(pk="00-AAA-RB").update(espn_id="4709718")
+
+    def nflverse(self):
+        return pd.DataFrame(
+            [{"player_id": "00-AAA-WR", "season": 2025, "week": 4, "status": "Questionable", "injury": "Hip"},
+             {"player_id": "00-AAA-TE", "season": 2025, "week": 3, "status": "Out", "injury": "Hip"}]
+        )
+
+    def test_espn_is_used_when_it_answers(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = io.BytesIO(json.dumps(espn_feed([espn_item("4709718", "Out")])).encode())
+        with mock.patch("predictor.gameday.urllib.request.urlopen", return_value=response), \
+                mock.patch("predictor.gameday.load_injuries") as nflverse:
+            df, source = fetch_statuses(2025, 4)
+        self.assertEqual(source, "espn")
+        self.assertEqual(df.to_dict("records"),
+                         [{"player_id": "00-AAA-RB", "season": 2025, "week": 4, "status": "Out", "injury": "Knee"}])
+        nflverse.assert_not_called()
+
+    def test_nflverse_is_the_fallback_when_espn_fails(self):
+        with mock.patch("predictor.gameday.urllib.request.urlopen", side_effect=OSError("timed out")), \
+                mock.patch("predictor.gameday.load_injuries", return_value=self.nflverse()):
+            df, source = fetch_statuses(2025, 4)
+        self.assertEqual(source, "nflverse")
+        self.assertEqual(df["player_id"].tolist(), ["00-AAA-WR"])  # this week's rows only
+
+    def test_nflverse_is_used_until_espn_ids_are_stored(self):
+        from predictor.models import Player
+
+        Player.objects.update(espn_id="")
+        with mock.patch("predictor.gameday.urllib.request.urlopen") as urlopen, \
+                mock.patch("predictor.gameday.load_injuries", return_value=self.nflverse()):
+            _, source = fetch_statuses(2025, 4)
+        urlopen.assert_not_called()
+        self.assertEqual(source, "nflverse")
+
+
+class EspnIdIngestTests(TestCase):
+    def test_espn_id_is_kept_from_the_nflverse_players_table(self):
+        from predictor.ingest import clean_players, store_player_bios
+        from predictor.models import Player
+
+        populate_db()
+        players = clean_players(
+            pd.DataFrame(
+                [{"gsis_id": "00-AAA-RB", "pfr_id": "X", "birth_date": "1998-05-02", "rookie_season": 2020,
+                  "draft_pick": 12, "espn_id": "4709718"},
+                 {"gsis_id": "00-AAA-WR", "pfr_id": "Y", "birth_date": None, "rookie_season": None,
+                  "draft_pick": None, "espn_id": None}]
+            )
+        )
+        self.assertEqual(players["espn_id"].tolist(), ["4709718", ""])
+        store_player_bios(players)
+        self.assertEqual(Player.objects.get(pk="00-AAA-RB").espn_id, "4709718")
+        self.assertEqual(Player.objects.get(pk="00-AAA-WR").espn_id, "")

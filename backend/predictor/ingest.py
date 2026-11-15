@@ -220,14 +220,18 @@ def clean_injuries(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_players(raw: pd.DataFrame) -> pd.DataFrame:
-    """Bio details from the nflverse players table: birth date, rookie season, draft slot and the
-    Pro Football Reference id (used to match snap counts)."""
+    """Bio details from the nflverse players table: birth date, rookie season, draft slot, the
+    Pro Football Reference id (used to match snap counts) and the ESPN id (used to match ESPN's
+    game-day injury feed)."""
     df = raw[raw["gsis_id"].notna()].drop_duplicates("gsis_id").copy()
     df["birth_date"] = pd.to_datetime(df["birth_date"], errors="coerce").dt.date
     for col in ["rookie_season", "draft_pick"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    if "espn_id" not in df:
+        df["espn_id"] = None
+    df["espn_id"] = df["espn_id"].map(lambda v: "" if pd.isna(v) else str(v).split(".")[0])
     return df.rename(columns={"gsis_id": "player_id", "pfr_id": "pfr_player_id"})[
-        ["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"]
+        ["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick", "espn_id"]
     ].reset_index(drop=True)
 
 
@@ -319,7 +323,7 @@ def load_players() -> pd.DataFrame:
         return clean_players(_nfl().load_players().to_pandas())
     except Exception:
         logger.warning("Player bios unavailable", exc_info=True)
-        return pd.DataFrame(columns=["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"])
+        return pd.DataFrame(columns=["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick", "espn_id"])
 
 
 def load_snap_counts(seasons: list[int], players: pd.DataFrame) -> pd.DataFrame:
@@ -491,8 +495,10 @@ def store_player_bios(players: pd.DataFrame) -> int:
         player.birth_date = _none_if_nan(bio["birth_date"])
         player.rookie_season = None if pd.isna(bio["rookie_season"]) else int(bio["rookie_season"])
         player.draft_pick = None if pd.isna(bio["draft_pick"]) else int(bio["draft_pick"])
+        espn_id = bio.get("espn_id")
+        player.espn_id = espn_id if isinstance(espn_id, str) else ""
         objs.append(player)
-    Player.objects.bulk_update(objs, ["birth_date", "rookie_season", "draft_pick"], batch_size=1000)
+    Player.objects.bulk_update(objs, ["birth_date", "rookie_season", "draft_pick", "espn_id"], batch_size=1000)
     return len(objs)
 
 

@@ -5,6 +5,10 @@ often ruled Out shortly before kickoff (teams name their inactives 90 minutes be
 those daily runs this job pulls the latest game statuses during the hours around each kickoff and
 re-projects the players whose games haven't started yet. It never retrains, so it stays cheap.
 
+Statuses come from ESPN's public injury feed, which teams' late calls reach within minutes. nflverse
+rebuilds its injury file only once a day (about 2am ET), so it is the fallback when ESPN can't be
+read: the job then keeps the official report the daily refresh loaded.
+
 The window follows the schedule, so each game day gets its own hours:
 
 * Sunday: from 5 hours before the first kickoff until 1 hour after the last one.
@@ -14,7 +18,10 @@ The window follows the schedule, so each game day gets its own hours:
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import urllib.request
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -72,10 +79,86 @@ def ensure_kickoffs(season: int, week: int) -> list[datetime]:
     return kickoffs
 
 
-def fetch_statuses(season: int, week: int) -> pd.DataFrame:
-    """Latest game statuses for the week (player_id, season, week, status, injury)."""
+ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
+ESPN_TIMEOUT_SECONDS = 20
+# ESPN's statuses mapped to the official game designations the model knows. Anyone on a reserve
+# list or suspended won't play this week, so they count as Out.
+ESPN_STATUS = {
+    "Out": "Out",
+    "Doubtful": "Doubtful",
+    "Questionable": "Questionable",
+    "Injured Reserve": "Out",
+    "Physically Unable to Perform": "Out",
+    "Non-Football Injury": "Out",
+    "Suspension": "Out",
+}
+SEVERITY = {"Out": 0, "Doubtful": 1, "Questionable": 2}
+# A response with injuries for fewer teams than this is treated as broken and not used.
+ESPN_MIN_TEAMS = 16
+STATUS_COLUMNS = ["player_id", "season", "week", "status", "injury"]
+_ESPN_ID_PATTERNS = [re.compile(r"/athletes/(\d+)/"), re.compile(r"/id/(\d+)"), re.compile(r"/(\d+)\.png")]
+
+
+def espn_athlete_id(athlete: dict) -> str | None:
+    """ESPN's numeric athlete id. The feed has no id field on the athlete, so read it from the
+    injury note's reference, the player page links or the headshot file name."""
+    if athlete.get("id"):
+        return str(athlete["id"])
+    texts = [i.get("injury", {}).get("$ref", "") for i in athlete.get("notes", {}).get("items", [])]
+    texts += [link.get("href", "") for link in athlete.get("links", [])]
+    texts.append(athlete.get("headshot", {}).get("href", ""))
+    for pattern in _ESPN_ID_PATTERNS:
+        for text in texts:
+            match = pattern.search(text or "")
+            if match:
+                return match.group(1)
+    return None
+
+
+def parse_espn_injuries(payload: dict, espn_to_player: dict[str, str], season: int, week: int) -> pd.DataFrame | None:
+    """Our players' statuses from ESPN's league-wide injury feed, or None if the response looks broken."""
+    teams = payload.get("injuries") if isinstance(payload, dict) else None
+    if not isinstance(teams, list) or len(teams) < ESPN_MIN_TEAMS:
+        return None
+    rows = []
+    for team in teams:
+        for item in team.get("injuries") or []:
+            status = ESPN_STATUS.get(item.get("status"))
+            player_id = espn_to_player.get(espn_athlete_id(item.get("athlete") or {}) or "")
+            if status and player_id:
+                injury = ((item.get("details") or {}).get("type") or "")[:60]
+                rows.append({"player_id": player_id, "season": season, "week": week, "status": status, "injury": injury})
+    df = pd.DataFrame(rows, columns=STATUS_COLUMNS)
+    df = df.assign(severity=df["status"].map(SEVERITY)).sort_values("severity").drop_duplicates("player_id")
+    return df[STATUS_COLUMNS].reset_index(drop=True)
+
+
+def load_espn_injuries(season: int, week: int) -> pd.DataFrame | None:
+    """Download and parse ESPN's feed; None when it can't be read or matched to our players."""
+    espn_to_player = dict(Player.objects.exclude(espn_id="").values_list("espn_id", "player_id"))
+    if not espn_to_player:  # filled by the daily refresh from the nflverse players table
+        logger.warning("No ESPN ids stored yet; skipping ESPN's injury feed")
+        return None
+    request = urllib.request.Request(ESPN_INJURIES_URL, headers={"User-Agent": "fantasy-score-predictor"})
+    try:
+        with urllib.request.urlopen(request, timeout=ESPN_TIMEOUT_SECONDS) as response:
+            payload = json.load(response)
+    except Exception:
+        logger.warning("ESPN injury feed unavailable", exc_info=True)
+        return None
+    parsed = parse_espn_injuries(payload, espn_to_player, season, week)
+    if parsed is None:
+        logger.warning("ESPN injury feed looked incomplete; not using it")
+    return parsed
+
+
+def fetch_statuses(season: int, week: int) -> tuple[pd.DataFrame, str]:
+    """Latest game statuses for the week and where they came from ("espn" or "nflverse")."""
+    espn = load_espn_injuries(season, week)
+    if espn is not None:
+        return espn, "espn"
     injuries = load_injuries([season])
-    return injuries[injuries["week"] == week]
+    return injuries[injuries["week"] == week], "nflverse"
 
 
 @transaction.atomic
@@ -148,9 +231,10 @@ def refresh_game_day(now: datetime | None = None, force: bool = False) -> dict:
     season, week = tw
     if not force and not in_game_window(now, ensure_kickoffs(season, week)):
         return {"ran": False, "reason": "no game window right now"}
-    fresh = fetch_statuses(season, week)
+    fresh, source = fetch_statuses(season, week)
     if fresh.empty:  # a failed download returns nothing; keep the report we have
-        return {"ran": True, "season": season, "week": week, "changed": [], "newly_out": [], "reprojected": 0}
+        return {"ran": True, "season": season, "week": week, "source": source, "changed": [], "newly_out": [],
+                "reprojected": 0}
     before_out = set(
         InjuryReport.objects.filter(season=season, week=week, status="Out").values_list("player_id", flat=True)
     )
@@ -163,6 +247,7 @@ def refresh_game_day(now: datetime | None = None, force: bool = False) -> dict:
         "ran": True,
         "season": season,
         "week": week,
+        "source": source,
         "changed": sorted(changed),
         "newly_out": sorted(now_out - before_out),
         "reprojected": reprojected,

@@ -52,7 +52,7 @@ Useful commands:
 | --- | --- |
 | `python manage.py refresh` | Daily job: pull current-season data, retrain, write predictions |
 | `python manage.py refresh --if-empty` | Same, but only if no model exists yet (used on deploy) |
-| `python manage.py injury_refresh` | Game-day job, run hourly: in the hours around kickoffs, update injury statuses and re-project players whose games haven't started (no retraining); exits at once otherwise. `--force` runs it anytime |
+| `python manage.py injury_refresh` | Game-day job, run hourly: in the hours around kickoffs, update injury statuses from ESPN's public injury feed (nflverse if ESPN can't be read) and re-project players whose games haven't started (no retraining); exits at once otherwise. `--force` runs it anytime |
 | `python manage.py ingest --full` | Reload every season from 2016 |
 | `python manage.py train` | Retrain and re-predict without downloading |
 
