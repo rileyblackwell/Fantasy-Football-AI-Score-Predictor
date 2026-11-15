@@ -16,7 +16,7 @@ const label = computed(() =>
   <span
     v-if="result"
     class="inline-grid size-[18px] shrink-0 place-items-center rounded-full"
-    :class="result === 'hit' ? 'bg-accent-soft text-good' : 'bg-surface-3 text-muted'"
+    :class="result === 'hit' ? 'bg-accent-soft text-good' : 'bg-[color-mix(in_oklab,var(--bad)_12%,transparent)] text-bad'"
     role="img"
     :aria-label="label"
     :title="label"

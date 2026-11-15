@@ -160,8 +160,6 @@ function line(w: PlayerWeek): string {
                 <td class="text-right">
                   <span v-if="w.actual !== null" class="inline-flex items-center justify-end gap-1.5">
                     <strong :class="deltaClass(w)">{{ points(w.actual) }}</strong>
-                    <!-- On phones the check or cross sits beside the score instead of in its own column. -->
-                    <span class="hidden max-tab:inline-flex"><GradeMark :projected="w.projected" :actual="w.actual" /></span>
                   </span>
                   <span v-else class="text-muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
                 </td>

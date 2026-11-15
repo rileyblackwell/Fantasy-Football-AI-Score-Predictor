@@ -389,8 +389,6 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <td v-if="showActual" class="text-right">
                 <span v-if="row.actual !== null" class="inline-flex items-center justify-end gap-1.5">
                   <span :class="[projection, diffClass(row)]">{{ points(row.actual) }}</span>
-                  <!-- On phones the check or cross sits beside the score instead of in its own column. -->
-                  <span class="hidden max-tab:inline-flex"><GradeMark :projected="row.projected" :actual="row.actual" /></span>
                 </span>
                 <span v-else class="text-muted">{{ isPastWeek ? 'DNP' : '–' }}</span>
               </td>
