@@ -283,11 +283,37 @@ class StatusSourceTests(TestCase):
         self.assertEqual(source, "nflverse")
         self.assertEqual(df["player_id"].tolist(), ["00-AAA-WR"])  # this week's rows only
 
-    def test_nflverse_is_used_until_espn_ids_are_stored(self):
+    def espn_answers(self, *items):
+        response = mock.MagicMock()
+        response.__enter__.return_value = io.BytesIO(json.dumps(espn_feed(list(items))).encode())
+        return response
+
+    def test_missing_espn_ids_are_loaded_once_so_espn_works_on_the_first_game_day(self):
         from predictor.models import Player
 
         Player.objects.update(espn_id="")
-        with mock.patch("predictor.gameday.urllib.request.urlopen") as urlopen, \
+        table = pd.DataFrame(
+            [{"player_id": "00-AAA-RB", "pfr_player_id": "X", "birth_date": None, "rookie_season": 2020,
+              "draft_pick": 12, "espn_id": "4709718"}]
+        )
+        with mock.patch("predictor.gameday.load_players", return_value=table) as players, \
+                mock.patch("predictor.gameday.urllib.request.urlopen",
+                           side_effect=lambda *a, **k: self.espn_answers(espn_item("4709718", "Out"))), \
+                mock.patch("predictor.gameday.load_injuries") as nflverse:
+            df, source = fetch_statuses(2025, 4)
+            fetch_statuses(2025, 4)
+        self.assertEqual(source, "espn")
+        self.assertEqual(df["player_id"].tolist(), ["00-AAA-RB"])
+        self.assertEqual(Player.objects.get(pk="00-AAA-RB").espn_id, "4709718")
+        players.assert_called_once()  # stored now, so the next hour doesn't download it again
+        nflverse.assert_not_called()
+
+    def test_nflverse_is_used_when_espn_ids_cant_be_loaded(self):
+        from predictor.models import Player
+
+        Player.objects.update(espn_id="")
+        with mock.patch("predictor.gameday.load_players", side_effect=OSError("down")), \
+                mock.patch("predictor.gameday.urllib.request.urlopen") as urlopen, \
                 mock.patch("predictor.gameday.load_injuries", return_value=self.nflverse()):
             _, source = fetch_statuses(2025, 4)
         urlopen.assert_not_called()
