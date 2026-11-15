@@ -12,6 +12,7 @@ function row(id: string, extra: Partial<WaiverRow> = {}): WaiverRow {
     headshot_url: '',
     projected: 9.5,
     position_rank: 50,
+    rank_from_week: null,
     injury_status: null,
     injury: null,
     points_recent: 12,
@@ -36,7 +37,11 @@ describe('isLikelyStarter', () => {
     expect(isLikelyStarter(row('d', { position: 'QB', position_rank: 3 }))).toBe(true)
   })
 
-  it('treats a player with no projection as available', () => {
+  it('counts a rank carried over from an earlier week, as for a player on bye', () => {
+    expect(isLikelyStarter(row('a', { projected: null, position_rank: 2, rank_from_week: 9 }))).toBe(true)
+  })
+
+  it('treats a player with no rank at all as available', () => {
     expect(isLikelyStarter(row('a', { position_rank: null }))).toBe(false)
   })
 })

@@ -177,7 +177,11 @@ const projection = 'font-display text-[24px] leading-none font-extrabold tabular
                     >
                     <span :class="meta2">
                       <PosChip :pos="row.position" />
-                      <span v-if="row.position_rank">{{ row.position }}{{ row.position_rank }}</span>
+                      <span
+                        v-if="row.position_rank"
+                        :title="row.rank_from_week ? `No game this week; rank from the Week ${row.rank_from_week} projection` : undefined"
+                        >{{ row.position }}{{ row.position_rank }}<template v-if="row.rank_from_week"> · bye</template></span
+                      >
                       <span>· {{ row.team }}</span>
                       <span v-if="row.opponent">· {{ row.is_home ? 'vs' : '@' }} {{ row.opponent }}</span>
                     </span>
