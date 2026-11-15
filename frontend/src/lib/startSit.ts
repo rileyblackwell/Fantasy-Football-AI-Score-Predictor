@@ -76,3 +76,17 @@ export function recommend(rows: PredictionRow[]): Verdict {
   const margin = start && rest.length ? Math.round((start.projected - rest[0].projected) * 10) / 10 : null
   return { start, margin, confidence: confidenceFor(margin), sit: [...rest, ...out], out }
 }
+
+export type PickStatus = 'start' | 'sit' | 'out' | 'idle' | 'none'
+
+/**
+ * The badge for one picked player's card. A player ruled out reads Out and one with
+ * no game reads idle. Start and Sit only mean something next to another player, so
+ * with fewer than two picks a playing player gets no verdict ('none').
+ */
+export function pickStatus(row: PredictionRow | undefined, verdict: Verdict, pickCount: number): PickStatus {
+  if (!row) return 'idle'
+  if (row.injury_status === 'Out') return 'out'
+  if (pickCount < 2) return 'none'
+  return verdict.start?.player_id === row.player_id ? 'start' : 'sit'
+}

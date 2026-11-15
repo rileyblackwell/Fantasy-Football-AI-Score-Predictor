@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlayerWeek, PredictionRow } from './api'
-import { confidenceFor, MAX_PICKS, parsePicks, recentGames, recommend, searchPlayers } from './startSit'
+import { confidenceFor, MAX_PICKS, parsePicks, pickStatus, recentGames, recommend, searchPlayers } from './startSit'
 
 function row(id: string, name: string, projected: number, extra: Partial<PredictionRow> = {}): PredictionRow {
   return {
@@ -101,5 +101,26 @@ describe('recommend', () => {
     expect(confidenceFor(2.5)).toBe('lean')
     expect(confidenceFor(3.1)).toBe('clear')
     expect(recommend([row('a', 'A', 15.2), row('b', 'B', 14.8)]).confidence).toBe('toss-up')
+  })
+})
+
+describe('pickStatus', () => {
+  it('gives a lone playing pick no Start or Sit verdict', () => {
+    const a = row('a', 'A', 14.2)
+    expect(pickStatus(a, recommend([a]), 1)).toBe('none')
+  })
+
+  it('marks Start and Sit once a second player is picked', () => {
+    const a = row('a', 'A', 14.2)
+    const b = row('b', 'B', 9.8)
+    const verdict = recommend([a, b])
+    expect(pickStatus(a, verdict, 2)).toBe('start')
+    expect(pickStatus(b, verdict, 2)).toBe('sit')
+  })
+
+  it('still flags a lone pick who is out or has no game', () => {
+    const out = row('a', 'A', 14.2, { injury_status: 'Out' })
+    expect(pickStatus(out, recommend([out]), 1)).toBe('out')
+    expect(pickStatus(undefined, recommend([]), 1)).toBe('idle')
   })
 })
