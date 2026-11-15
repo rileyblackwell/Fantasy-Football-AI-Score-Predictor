@@ -140,7 +140,7 @@ function line(w: PlayerWeek): string {
                 <th>Opponent</th>
                 <th class="text-right">Proj</th>
                 <th class="text-right">Actual</th>
-                <th class="w-12 text-center max-tab:w-9 max-tab:px-1!" title="Within 5 points of the projection">±5</th>
+                <th class="text-center max-tab:px-1!" title="Within 5 points of the projection">Accurate</th>
                 <th class="max-tab:hidden">Stat line</th>
               </tr>
             </thead>

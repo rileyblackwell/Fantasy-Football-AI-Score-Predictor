@@ -314,8 +314,8 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <th class="text-right max-tab:hidden">Last 3 avg</th>
               <th class="text-right">Projected</th>
               <th v-if="showActual" class="text-right">Actual</th>
-              <th v-if="showActual" class="w-12 text-center max-tab:w-9 max-tab:px-1!" title="Within 5 points of the projection">
-                ±5
+              <th v-if="showActual" class="text-center max-tab:px-1!" title="Within 5 points of the projection">
+                Accurate
               </th>
             </tr>
           </thead>
