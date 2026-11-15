@@ -5,7 +5,7 @@ import { api, type PlayerDetail, type PredictionRow } from '../lib/api'
 import { byeFlag, injuryClass, injuryShort, points, SCORING_NAMES } from '../lib/format'
 import { scoring } from '../lib/store'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
-import { MAX_PICKS, parsePicks, recentGames, recommend } from '../lib/startSit'
+import { MAX_PICKS, parsePicks, pickStatus, type PickStatus, recentGames, recommend } from '../lib/startSit'
 import PageHero from '../components/PageHero.vue'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
 import PlayerPicker from '../components/PlayerPicker.vue'
@@ -68,11 +68,8 @@ const topScorer = computed(() =>
     : null,
 )
 
-function status(id: string): 'start' | 'sit' | 'out' | 'idle' {
-  const row = byId.value.get(id)
-  if (!row) return 'idle'
-  if (row.injury_status === 'Out') return 'out'
-  return verdict.value.start?.player_id === id && picks.value.length > 1 ? 'start' : 'sit'
+function status(id: string): PickStatus {
+  return pickStatus(byId.value.get(id), verdict.value, picks.value.length)
 }
 
 async function loadRows() {
@@ -134,6 +131,12 @@ const BADGES = {
   out: ['Out', 'inj-out'],
   idle: ['No game', 'bg-surface-3 text-muted'],
 } as const
+
+/** The card's badge, or null when there is nothing to say yet (one player picked). */
+function badgeFor(id: string) {
+  const s = status(id)
+  return s === 'none' ? null : BADGES[s]
+}
 </script>
 
 <template>
@@ -221,10 +224,10 @@ const BADGES = {
           <div class="h-1.5 bg-(--team)" />
           <div class="flex flex-1 flex-col px-5 pt-4 pb-5 max-tab:px-4">
             <div class="flex items-center justify-between">
-              <span :class="[badge, BADGES[status(card.id)][1]]">{{ BADGES[status(card.id)][0] }}</span>
+              <span v-if="badgeFor(card.id)" :class="[badge, badgeFor(card.id)?.[1]]">{{ badgeFor(card.id)?.[0] }}</span>
               <button
                 type="button"
-                class="grid size-8 place-items-center rounded-full text-[18px] text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+                class="ml-auto grid size-8 place-items-center rounded-full text-[18px] text-muted transition-colors hover:bg-surface-2 hover:text-fg"
                 :aria-label="`Remove ${card.name}`"
                 @click="remove(card.id)"
               >
