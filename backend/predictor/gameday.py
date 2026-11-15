@@ -30,7 +30,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .features import FEATURES, build_features
-from .ingest import load_injuries, load_schedule, store_schedule
+from .ingest import load_injuries, load_players, load_schedule, store_player_bios, store_schedule
 from .models import Game, InjuryReport, ModelRun, Player, Prediction
 from .pipeline import (
     _prediction_objects,
@@ -133,10 +133,27 @@ def parse_espn_injuries(payload: dict, espn_to_player: dict[str, str], season: i
     return df[STATUS_COLUMNS].reset_index(drop=True)
 
 
+def espn_ids() -> dict[str, str]:
+    """ESPN id -> our player id. The daily refresh stores them from the nflverse players table; if it
+    hasn't yet (the first game day after this shipped), load that table here once so ESPN works today."""
+    def stored():
+        return dict(Player.objects.exclude(espn_id="").values_list("espn_id", "player_id"))
+
+    ids = stored()
+    if not ids:
+        try:
+            store_player_bios(load_players())
+        except Exception:
+            logger.warning("Couldn't load the nflverse players table for ESPN ids", exc_info=True)
+            return {}
+        ids = stored()
+    return ids
+
+
 def load_espn_injuries(season: int, week: int) -> pd.DataFrame | None:
     """Download and parse ESPN's feed; None when it can't be read or matched to our players."""
-    espn_to_player = dict(Player.objects.exclude(espn_id="").values_list("espn_id", "player_id"))
-    if not espn_to_player:  # filled by the daily refresh from the nflverse players table
+    espn_to_player = espn_ids()
+    if not espn_to_player:
         logger.warning("No ESPN ids stored yet; skipping ESPN's injury feed")
         return None
     request = urllib.request.Request(ESPN_INJURIES_URL, headers={"User-Agent": "fantasy-score-predictor"})
