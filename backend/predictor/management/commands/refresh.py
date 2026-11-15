@@ -22,6 +22,12 @@ def needs_full_load() -> bool:
     return latest is not None and "snap_last1" not in (latest.features or [])
 
 
+def needs_ranges() -> bool:
+    """True when the latest model predates score ranges, so a deploy retrains once to add them."""
+    latest = ModelRun.objects.order_by("-created_at").first()
+    return latest is not None and "ppr_q90" not in (latest.boosters or {})
+
+
 class Command(BaseCommand):
     help = (
         "Scheduled job: pull the latest nflverse data, retrain and write predictions. "
@@ -35,7 +41,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, if_empty=False, **options):
         full_load = needs_full_load()
-        if if_empty and ModelRun.objects.exists() and not full_load:
+        if if_empty and ModelRun.objects.exists() and not full_load and not needs_ranges():
             self.stdout.write("Data already loaded; skipping refresh.")
             return
         log = RefreshLog.objects.create()
