@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("predictor", "0003_usage_injury_bio_features"),
+        ("predictor", "0004_prediction_ranges"),
     ]
 
     operations = [

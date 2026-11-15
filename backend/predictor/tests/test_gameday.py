@@ -119,6 +119,8 @@ class GameDayRefreshTests(TestCase):
             for pos in ["QB", "RB", "WR", "TE"]:
                 self.assertEqual(after[f"00-{team}-{pos}"], before[f"00-{team}-{pos}"])
         self.assertFalse(Prediction.objects.filter(season=2025, week=4, is_backtest=True).exists())
+        # Re-projected rows keep their score ranges.
+        self.assertIsNotNone(Prediction.objects.get(player_id="00-DDD-WR", season=2025, week=4).floor_ppr)
 
         # The projections, Start/Sit and player pages all read the week's report.
         rows = {r["player_id"]: r for r in self.client.get("/api/predictions?season=2025&week=4").json()["results"]}
