@@ -11,6 +11,7 @@ const router = createRouter({
     { path: '/players/:id', name: 'player', component: () => import('./views/PlayerView.vue'), meta: { title: 'Player' } },
     { path: '/start-sit', name: 'start-sit', component: () => import('./views/StartSitView.vue'), meta: { title: 'Start/Sit' } },
     { path: '/trade', name: 'trade', component: () => import('./views/TradeView.vue'), meta: { title: 'Trade Analyzer' } },
+    { path: '/waivers', name: 'waivers', component: () => import('./views/WaiverWireView.vue'), meta: { title: 'Waiver Wire' } },
     { path: '/about', name: 'about', component: () => import('./views/AboutView.vue'), meta: { title: 'How It Works', pprOnly: true } },
     { path: '/accuracy', name: 'accuracy', component: () => import('./views/AccuracyView.vue'), meta: { title: 'Scorecard', pprOnly: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
