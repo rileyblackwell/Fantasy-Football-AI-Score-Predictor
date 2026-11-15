@@ -99,6 +99,31 @@ class WaiversApiTests(TestCase):
         self.assertEqual(wr["position_rank"], 1)
         self.assertEqual([h["week"] for h in wr["history"]], list(range(1, 8)))
 
+    def test_player_without_a_projection_is_ranked_from_their_latest_one(self):
+        # AAA WR is on bye in week 8, but was projected well above every other WR in week 7.
+        Prediction.objects.filter(player_id="00-AAA-WR", week=8).delete()
+        Prediction.objects.create(
+            player_id="00-AAA-WR", season=2025, week=6, team="AAA", opponent="BBB", is_home=True,
+            points_ppr=1.0, points_half=1.0, points_std=1.0,
+        )
+        Prediction.objects.create(
+            player_id="00-AAA-WR", season=2025, week=7, team="AAA", opponent="BBB", is_home=True,
+            points_ppr=99.0, points_half=99.0, points_std=99.0,
+        )
+        wr = next(r for r in self.client.get("/api/waivers").json()["results"] if r["player_id"] == "00-AAA-WR")
+        self.assertIsNone(wr["projected"])
+        self.assertEqual((wr["position_rank"], wr["rank_from_week"]), (1, 7))
+        # A player with this week's projection keeps this week's rank.
+        rb = next(r for r in self.client.get("/api/waivers").json()["results"] if r["player_id"] == "00-BBB-RB")
+        self.assertIsNone(rb["rank_from_week"])
+        self.assertIsNotNone(rb["position_rank"])
+
+    def test_player_with_no_projection_at_all_has_no_rank(self):
+        Prediction.objects.filter(player_id="00-AAA-WR").delete()
+        wr = next(r for r in self.client.get("/api/waivers").json()["results"] if r["player_id"] == "00-AAA-WR")
+        self.assertIsNone(wr["position_rank"])
+        self.assertIsNone(wr["rank_from_week"])
+
     def test_includes_injury_status(self):
         rb = next(r for r in self.client.get("/api/waivers").json()["results"] if r["player_id"] == "00-BBB-RB")
         self.assertEqual((rb["injury_status"], rb["injury"]), ("Questionable", "Knee"))

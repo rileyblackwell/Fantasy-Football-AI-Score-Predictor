@@ -129,6 +129,23 @@ def waivers(request):
         flagged.append((player, rows, trend, recent_points, prior_points))
 
     ids = [player.player_id for player, *_ in flagged]
+    # Players with no projection this week (on bye, or dropped from the slate) would otherwise have no
+    # rank and slip past the "likely starter" filter. Slot their latest projection into this week's ranks.
+    rank_week = {}
+    missing = [pid for pid in ids if pid not in projections]
+    latest = Prediction.objects.filter(season=season, week__lt=week, player_id__in=missing).order_by("player_id", "-week")
+    week_values: dict[str, list[float]] = {}
+    for p in preds:
+        week_values.setdefault(p.player.position, []).append(getattr(p, field))
+    positions_by_id = {player.player_id: player.position for player, *_ in flagged}
+    for p in latest:
+        if p.player_id in rank_week:
+            continue  # already took this player's most recent week
+        value = getattr(p, field)
+        others = week_values.get(positions_by_id[p.player_id], [])
+        position_rank[p.player_id] = 1 + sum(v > value for v in others)
+        rank_week[p.player_id] = p.week
+
     injuries = {i.player_id: i for i in InjuryReport.objects.filter(season=season, week=week, player_id__in=ids)}
     results = []
     for player, rows, trend, recent_points, prior_points in flagged:
@@ -144,6 +161,8 @@ def waivers(request):
                 "headshot_url": player.headshot_url,
                 "projected": round(getattr(pred, field), 1) if pred else None,
                 "position_rank": position_rank.get(player.player_id),
+                # Set when the rank comes from an earlier week's projection rather than this week's.
+                "rank_from_week": rank_week.get(player.player_id),
                 "injury_status": inj.status if inj else None,
                 "injury": inj.injury if inj else None,
                 "points_recent": round(sum(recent_points) / len(recent_points), 1),

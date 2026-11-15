@@ -23,6 +23,8 @@ export interface WaiverRow {
   projected: number | null
   /** Rank by projection within the position this week. */
   position_rank: number | null
+  /** When the player has no projection this week (e.g. on bye): the earlier week whose projection set the rank. */
+  rank_from_week: number | null
   injury_status: string | null
   injury: string | null
   points_recent: number
