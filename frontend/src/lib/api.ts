@@ -122,7 +122,7 @@ export interface Accuracy {
   biggest_misses: AccuracyPick[]
 }
 
-async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
+export async function get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== '') query.set(key, String(value))

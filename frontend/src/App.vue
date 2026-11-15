@@ -53,6 +53,7 @@ loadSummary()
       >
         <RouterLink to="/" :class="navLink" :exact-active-class="navActive">Projections</RouterLink>
         <RouterLink to="/start-sit" :class="navLink" :active-class="navActive">Start/Sit</RouterLink>
+        <RouterLink to="/waivers" :class="navLink" :active-class="navActive">Waivers</RouterLink>
         <RouterLink to="/accuracy" :class="navLink" :active-class="navActive">Scorecard</RouterLink>
         <RouterLink to="/about" :class="navLink" :active-class="navActive">How it works</RouterLink>
       </nav>
