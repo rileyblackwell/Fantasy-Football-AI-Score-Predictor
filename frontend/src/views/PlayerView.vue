@@ -140,7 +140,7 @@ function line(w: PlayerWeek): string {
                 <th>Opponent</th>
                 <th class="text-right">Proj</th>
                 <th class="text-right">Actual</th>
-                <th class="text-center max-tab:px-1!" title="Within 5 points of the projection">Accurate</th>
+                <th class="text-center max-tab:hidden" title="Within 5 points of the projection">Accurate</th>
                 <th class="max-tab:hidden">Stat line</th>
               </tr>
             </thead>
@@ -158,10 +158,14 @@ function line(w: PlayerWeek): string {
                 </td>
                 <td class="text-right">{{ w.projected !== null ? points(w.projected) : '–' }}</td>
                 <td class="text-right">
-                  <strong v-if="w.actual !== null" :class="deltaClass(w)">{{ points(w.actual) }}</strong>
+                  <span v-if="w.actual !== null" class="inline-flex items-center justify-end gap-1.5">
+                    <strong :class="deltaClass(w)">{{ points(w.actual) }}</strong>
+                    <!-- On phones the check or cross sits beside the score instead of in its own column. -->
+                    <span class="hidden max-tab:inline-flex"><GradeMark :projected="w.projected" :actual="w.actual" /></span>
+                  </span>
                   <span v-else class="text-muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
                 </td>
-                <td class="text-center max-tab:px-1!">
+                <td class="text-center max-tab:hidden">
                   <GradeMark :projected="w.projected" :actual="w.actual" class="align-middle" />
                 </td>
                 <td class="text-[13px] text-muted max-tab:hidden">{{ line(w) }}</td>
