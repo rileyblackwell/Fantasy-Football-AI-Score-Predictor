@@ -155,7 +155,7 @@ function diffClass(row: PredictionRow) {
 // Repeated class lists, kept here so the template stays readable.
 const statValue = 'font-display text-[30px] leading-none font-bold tabular-nums'
 const statLabel = 'mt-1 text-[12px] tracking-[0.08em] text-hero-muted uppercase'
-const meta = 'mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted'
+const meta = 'mt-0.5 flex items-center gap-1.5 text-[12.5px] text-muted max-tab:flex-wrap max-tab:gap-y-0'
 const rankCell = 'w-11 font-display text-[17px] font-bold text-muted max-tab:w-[30px] max-tab:text-[15px]'
 const projection = 'font-display text-[24px] leading-none font-extrabold tabular-nums max-tab:text-[20px]'
 const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-middle'
@@ -312,9 +312,9 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <th>Player</th>
               <th class="max-tab:hidden">Matchup</th>
               <th class="text-right max-tab:hidden">Last 3 avg</th>
-              <th class="text-right">Projected</th>
+              <th class="text-right"><span class="max-tab:hidden">Projected</span><span class="hidden max-tab:inline" title="Projected">Proj</span></th>
               <th v-if="showActual" class="text-right">Actual</th>
-              <th v-if="showActual" class="text-center max-tab:px-1!" title="Within 5 points of the projection">
+              <th v-if="showActual" class="text-center max-tab:hidden" title="Within 5 points of the projection">
                 Accurate
               </th>
             </tr>
@@ -380,16 +380,21 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
                 <div :class="projection" :title="row.injury_status === 'Out' ? 'Ruled out this week' : undefined">
                   {{ points(row.projected) }}
                 </div>
+                <!-- The bar is 72px at full scale, 44px on phones so the row fits without sideways scrolling. -->
                 <div
-                  class="mt-1.5 ml-auto h-1 rounded-xs bg-bar"
-                  :style="{ width: `${(row.projected / maxProjection) * 72}px` }"
+                  class="mt-1.5 ml-auto h-1 rounded-xs bg-bar [--bar-max:72px] max-tab:[--bar-max:44px]"
+                  :style="{ width: `calc(var(--bar-max) * ${row.projected / maxProjection})` }"
                 />
               </td>
               <td v-if="showActual" class="text-right">
-                <span v-if="row.actual !== null" :class="[projection, diffClass(row)]">{{ points(row.actual) }}</span>
+                <span v-if="row.actual !== null" class="inline-flex items-center justify-end gap-1.5">
+                  <span :class="[projection, diffClass(row)]">{{ points(row.actual) }}</span>
+                  <!-- On phones the check or cross sits beside the score instead of in its own column. -->
+                  <span class="hidden max-tab:inline-flex"><GradeMark :projected="row.projected" :actual="row.actual" /></span>
+                </span>
                 <span v-else class="text-muted">{{ isPastWeek ? 'DNP' : '–' }}</span>
               </td>
-              <td v-if="showActual" class="text-center max-tab:px-1!">
+              <td v-if="showActual" class="text-center max-tab:hidden">
                 <GradeMark :projected="row.projected" :actual="row.actual" class="align-middle" />
               </td>
             </tr>
