@@ -6,6 +6,7 @@ import PosChip from '../components/PosChip.vue'
 import PageHero from '../components/PageHero.vue'
 import StatTile from '../components/StatTile.vue'
 import StateMessage from '../components/StateMessage.vue'
+import GradeMark from '../components/GradeMark.vue'
 
 loadSummary()
 
@@ -98,6 +99,30 @@ const maxShare = computed(() => Math.max(0.01, ...(model.value?.feature_importan
           <li><strong>Training.</strong> LightGBM models for PPR and standard scoring retrain each day on a small CPU job; half-PPR is the average of the two. Team defenses are scored on sacks, turnovers, touchdowns, safeties, blocked kicks and points allowed.</li>
           <li><strong>Honesty check.</strong> Accuracy above comes from a model that never saw the season it was tested on. Past weeks of this season are also projected by a model trained only on earlier seasons.</li>
         </ol>
+      </div>
+
+      <div :class="section">
+        <h2 class="section-title">The Accurate column</h2>
+        <ul class="m-0 grid max-w-[780px] list-none gap-3 p-0 leading-[1.6]">
+          <li class="flex items-start gap-2.5">
+            <GradeMark :projected="10" :actual="10" class="mt-[3px]" />
+            <span>
+              <strong>Check:</strong> the player's real score landed within 5 points of the projection, over or under.
+              Projected 14.2 and scored 17.0 or 9.5? That's a check. Exactly 5 points off still counts.
+            </span>
+          </li>
+          <li class="flex items-start gap-2.5">
+            <GradeMark :projected="10" :actual="20" class="mt-[3px]" />
+            <span><strong>Cross:</strong> the real score was more than 5 points away from the projection.</span>
+          </li>
+        </ul>
+        <p class="mt-3 mb-0 max-w-[780px] leading-[1.6] text-muted">
+          You'll find it on past weeks of the Projections page and in each player's game log. Grades use the numbers on
+          screen, in the scoring format you've picked. Players who didn't play aren't graded. From the week the site went
+          live, we grade the projection that was published before kickoff, which is locked and never changed afterwards.
+          Earlier weeks are graded against a backtest from a model trained only on earlier seasons, so it never saw the
+          games it's graded on. The Scorecard adds up how often we've been within 5 points.
+        </p>
       </div>
     </template>
     <div v-else class="card mt-[18px]">

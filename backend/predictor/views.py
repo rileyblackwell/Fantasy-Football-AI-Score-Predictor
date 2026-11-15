@@ -195,6 +195,14 @@ def player_detail(request, player_id: str):
     )
 
 
+def within_5(projected: float, actual: float) -> bool:
+    """A projection is a good call when the real score lands within 5 points of it.
+
+    Compared at one decimal, as the site shows the numbers, so the scorecard agrees with the check marks.
+    """
+    return abs(round(actual * 10) - round(projected * 10)) <= 50
+
+
 @api_view(["GET"])
 def accuracy(request):
     """How past projections compared with what actually happened (PPR scoring)."""
@@ -232,11 +240,13 @@ def accuracy(request):
         if not rows:
             return None
         errors = [abs(r["projected"] - r["actual"]) for r in rows]
+        hits = sum(within_5(r["projected"], r["actual"]) for r in rows)
         with_base = [r for r in rows if r["baseline"] is not None]
         return {
             "games": len(rows),
             "mae": round(sum(errors) / len(errors), 2),
-            "within_5": round(sum(e <= 5 for e in errors) / len(errors), 3),
+            "within_5": round(hits / len(rows), 3),
+            "hits": hits,
             "baseline_mae": round(sum(abs(r["baseline"] - r["actual"]) for r in with_base) / len(with_base), 2)
             if with_base
             else None,

@@ -109,6 +109,7 @@ export interface AccuracySummary {
   games: number
   mae: number
   within_5: number
+  hits: number
   baseline_mae: number | null
   live_games: number
 }
