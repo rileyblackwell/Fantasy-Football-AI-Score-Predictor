@@ -194,7 +194,7 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
           </div>
           <div v-if="isPastWeek && weekHits">
             <div :class="statValue">{{ Math.round(weekHits.share * 100) }}%</div>
-            <div :class="statLabel">Within 5 pts · {{ weekHits.hits }} of {{ weekHits.graded }}</div>
+            <div :class="statLabel">Accurate · {{ weekHits.hits }} of {{ weekHits.graded }}</div>
           </div>
           <div v-else-if="summary?.model?.metrics?.model_mae">
             <div :class="statValue">±{{ summary.model.metrics.model_mae.toFixed(1) }}</div>
