@@ -52,6 +52,7 @@ Useful commands:
 | --- | --- |
 | `python manage.py refresh` | Daily job: pull current-season data, retrain, write predictions |
 | `python manage.py refresh --if-empty` | Same, but only if no model exists yet (used on deploy) |
+| `python manage.py injury_refresh` | Game-day job, run hourly: in the hours around kickoffs, update injury statuses and re-project players whose games haven't started (no retraining); exits at once otherwise. `--force` runs it anytime |
 | `python manage.py ingest --full` | Reload every season from 2016 |
 | `python manage.py train` | Retrain and re-predict without downloading |
 
@@ -70,6 +71,7 @@ The root `Dockerfile` builds the Vue app and the Django image. One project holds
 | --- | --- | --- |
 | `web` | Dockerfile default (gunicorn) | Pre-deploy: `python manage.py deploy_setup` (migrate, then load data and train if the DB is empty). Healthcheck `/api/health`. Serverless sleep on. |
 | `refresh` | `python manage.py refresh` | Same image, cron `0 11 * * *` (daily, 11:00 UTC). Runs ~20s at ~0.5 GB, then exits. |
-| `Postgres` | Railway template | `DATABASE_URL` is referenced by both app services. |
+| `injuries` | `python manage.py injury_refresh` | Same image, cron `0 * * * *` (hourly). Works only from 5 hours before a game day's first kickoff to 1 hour after its last: Sunday about 8am to 9:20pm ET, Thursday and Monday nights about 3:15pm to 9:15pm ET. A run takes a few seconds; outside those hours it exits in about a second. |
+| `Postgres` | Railway template | `DATABASE_URL` is referenced by the app services. |
 
-Environment variables for `web` and `refresh`: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `DJANGO_SECRET_KEY`.
+Environment variables for `web`, `refresh` and `injuries`: `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `DJANGO_SECRET_KEY`.

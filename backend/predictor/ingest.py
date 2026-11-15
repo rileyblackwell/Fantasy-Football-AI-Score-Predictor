@@ -182,13 +182,24 @@ def clean_teams(raw: pd.DataFrame) -> pd.DataFrame:
     return df[["abbr", "name", "nickname", "color", "color2", "logo_url"]].fillna("").reset_index(drop=True)
 
 
+def kickoff_times(schedule: pd.DataFrame) -> pd.Series:
+    """Kickoff as a UTC timestamp. nflverse gives the date and an Eastern-time clock ("13:00")."""
+    if "gametime" not in schedule:
+        return pd.Series(pd.NaT, index=schedule.index, dtype="datetime64[ns, UTC]")
+    local = pd.to_datetime(
+        schedule["gameday"].astype(str) + " " + schedule["gametime"].astype(str), format="%Y-%m-%d %H:%M", errors="coerce"
+    )
+    return local.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
+
+
 def clean_schedule(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw[raw["game_type"] == "REG"].copy()
     df["home_team"] = fix_team(df["home_team"])
     df["away_team"] = fix_team(df["away_team"])
+    df["kickoff"] = kickoff_times(df)
     df["gameday"] = pd.to_datetime(df["gameday"], errors="coerce").dt.date
     cols = [
-        "game_id", "season", "week", "gameday", "home_team", "away_team",
+        "game_id", "season", "week", "gameday", "kickoff", "home_team", "away_team",
         "home_score", "away_score", "spread_line", "total_line",
     ]
     return df[cols].reset_index(drop=True)
@@ -412,6 +423,7 @@ def store_schedule(schedule: pd.DataFrame) -> int:
             season=r.season,
             week=r.week,
             gameday=_none_if_nan(r.gameday),
+            kickoff=_none_if_nan(getattr(r, "kickoff", None)),
             home_team=r.home_team,
             away_team=r.away_team,
             home_score=_none_if_nan(r.home_score),
@@ -425,7 +437,7 @@ def store_schedule(schedule: pd.DataFrame) -> int:
         games,
         update_conflicts=True,
         unique_fields=["game_id"],
-        update_fields=["gameday", "home_score", "away_score", "spread_line", "total_line", "home_team", "away_team"],
+        update_fields=["gameday", "kickoff", "home_score", "away_score", "spread_line", "total_line", "home_team", "away_team"],
         batch_size=1000,
     )
     return len(games)

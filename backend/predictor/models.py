@@ -47,6 +47,7 @@ class Game(models.Model):
     season = models.PositiveSmallIntegerField()
     week = models.PositiveSmallIntegerField()
     gameday = models.DateField(null=True)
+    kickoff = models.DateTimeField(null=True, blank=True, help_text="Scheduled kickoff (stored in UTC).")
     home_team = models.CharField(max_length=4)
     away_team = models.CharField(max_length=4)
     home_score = models.SmallIntegerField(null=True)
