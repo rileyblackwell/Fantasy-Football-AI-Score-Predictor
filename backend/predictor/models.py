@@ -159,6 +159,13 @@ class Prediction(models.Model):
     points_half = models.FloatField()
     points_std = models.FloatField()
     recent_avg_ppr = models.FloatField(null=True)
+    # 10th-90th percentile range: about 8 weeks in 10 land inside it. Only set on live projections.
+    floor_ppr = models.FloatField(null=True)
+    ceiling_ppr = models.FloatField(null=True)
+    floor_half = models.FloatField(null=True)
+    ceiling_half = models.FloatField(null=True)
+    floor_std = models.FloatField(null=True)
+    ceiling_std = models.FloatField(null=True)
     created_at = models.DateTimeField(auto_now=True)
 
     class Meta:

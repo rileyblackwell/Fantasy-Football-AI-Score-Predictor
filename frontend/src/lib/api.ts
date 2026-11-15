@@ -53,6 +53,11 @@ export interface PredictionRow {
   is_home: boolean
   headshot_url: string
   projected: number
+  /** 10th-90th percentile outcome in the chosen scoring: about 8 weeks in 10 land in this range. */
+  floor?: number | null
+  ceiling?: number | null
+  /** How swingy the projection is, from the width of its PPR range. Null when there is no range. */
+  consistency?: 'steady' | 'swingy' | 'boom_bust' | null
   recent_avg_ppr: number | null
   injury_status: string | null
   injury: string | null
@@ -109,6 +114,7 @@ export interface AccuracySummary {
   games: number
   mae: number
   within_5: number
+  hits: number
   baseline_mae: number | null
   live_games: number
 }

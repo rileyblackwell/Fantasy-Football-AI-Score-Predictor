@@ -83,9 +83,13 @@ def upcoming_rows(season: int, week: int, stats: pd.DataFrame) -> pd.DataFrame:
     return upcoming[~upcoming["player_id"].isin(played_now)]
 
 
+RANGE_FIELDS = [f"{side}_{fmt}" for fmt in ("ppr", "half", "std") for side in ("floor", "ceiling")]
+
+
 def _prediction_objects(frame: pd.DataFrame, preds: pd.DataFrame, run: ModelRun, backtest: bool) -> list[Prediction]:
     objs = []
     for (_, row), (_, p) in zip(frame.iterrows(), preds.iterrows()):
+        ranges = {f: float(p[f]) for f in RANGE_FIELDS if f in p.index}
         objs.append(
             Prediction(
                 player_id=row["player_id"],
@@ -100,6 +104,7 @@ def _prediction_objects(frame: pd.DataFrame, preds: pd.DataFrame, run: ModelRun,
                 points_half=float(p["half"]),
                 points_std=float(p["std"]),
                 recent_avg_ppr=None if pd.isna(row["ppr_last3"]) else round(float(row["ppr_last3"]), 2),
+                **ranges,
             )
         )
     return objs
@@ -126,8 +131,8 @@ def run_pipeline(num_rounds: int | None = None) -> ModelRun:
     current = frame[(frame["season"] == season) & frame["is_played"].astype(bool)]
     backtest_models = train(frame[frame["season"] < season], **kwargs) if len(complete_seasons) else None
 
-    # 3. Final model on everything played so far, used for the upcoming week.
-    final = train(frame[frame["is_played"].astype(bool)], **kwargs)
+    # 3. Final model on everything played so far, used for the upcoming week, with score ranges.
+    final = train(frame[frame["is_played"].astype(bool)], with_ranges=True, **kwargs)
     last_played = frame[frame["is_played"].astype(bool)].sort_values(["season", "week"]).iloc[-1]
 
     with transaction.atomic():

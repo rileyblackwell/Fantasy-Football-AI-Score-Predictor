@@ -5,6 +5,7 @@ from django.http import FileResponse, Http404, JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from .modeling import consistency
 from .models import POSITIONS, Game, InjuryReport, ModelRun, Player, Prediction, RefreshLog, Team, WeeklyStat
 
 SCORING = {"ppr": "points_ppr", "half": "points_half", "std": "points_std"}
@@ -29,6 +30,19 @@ def _default_week() -> tuple[int, int] | None:
         return run.metrics["target_season"], run.metrics["target_week"]
     latest = Prediction.objects.order_by("-season", "-week").values("season", "week").first()
     return (latest["season"], latest["week"]) if latest else None
+
+
+def _score_range(p: Prediction, scoring: str) -> dict:
+    """The projection's 10th-90th percentile range in this scoring format, and how swingy it is.
+
+    The label always comes from the PPR range, so it doesn't change when the scoring switch does.
+    """
+    floor, ceiling = getattr(p, f"floor_{scoring}"), getattr(p, f"ceiling_{scoring}")
+    return {
+        "floor": None if floor is None else round(floor, 1),
+        "ceiling": None if ceiling is None else round(ceiling, 1),
+        "consistency": consistency(p.points_ppr, p.floor_ppr, p.ceiling_ppr),
+    }
 
 
 def bye_weeks(season: int) -> dict[str, int]:
@@ -130,6 +144,7 @@ def predictions(request):
                 "is_home": p.is_home,
                 "headshot_url": p.player.headshot_url,
                 "projected": round(getattr(p, field), 1),
+                **_score_range(p, scoring),
                 "recent_avg_ppr": p.recent_avg_ppr,
                 "injury_status": inj.status if inj else None,
                 "injury": inj.injury if inj else None,
@@ -195,6 +210,14 @@ def player_detail(request, player_id: str):
     )
 
 
+def within_5(projected: float, actual: float) -> bool:
+    """A projection is a good call when the real score lands within 5 points of it.
+
+    Compared at one decimal, as the site shows the numbers, so the scorecard agrees with the check marks.
+    """
+    return abs(round(actual * 10) - round(projected * 10)) <= 50
+
+
 @api_view(["GET"])
 def accuracy(request):
     """How past projections compared with what actually happened (PPR scoring)."""
@@ -232,11 +255,13 @@ def accuracy(request):
         if not rows:
             return None
         errors = [abs(r["projected"] - r["actual"]) for r in rows]
+        hits = sum(within_5(r["projected"], r["actual"]) for r in rows)
         with_base = [r for r in rows if r["baseline"] is not None]
         return {
             "games": len(rows),
             "mae": round(sum(errors) / len(errors), 2),
-            "within_5": round(sum(e <= 5 for e in errors) / len(errors), 3),
+            "within_5": round(hits / len(rows), 3),
+            "hits": hits,
             "baseline_mae": round(sum(abs(r["baseline"] - r["actual"]) for r in with_base) / len(with_base), 2)
             if with_base
             else None,

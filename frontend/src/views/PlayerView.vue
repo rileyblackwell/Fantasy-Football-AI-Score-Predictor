@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { api, type PlayerDetail, type PlayerWeek } from '../lib/api'
 import { injuryClass, matchup, points, SCORING_NAMES } from '../lib/format'
+import { hitRate } from '../lib/grade'
 import { scoring } from '../lib/store'
 import { loadSummary, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
@@ -11,6 +12,7 @@ import TeamLogo from '../components/TeamLogo.vue'
 import WeekChart from './WeekChart.vue'
 import StatTile from '../components/StatTile.vue'
 import StateMessage from '../components/StateMessage.vue'
+import GradeMark from '../components/GradeMark.vue'
 
 const route = useRoute()
 const player = ref<PlayerDetail | null>(null)
@@ -37,6 +39,7 @@ const avgMiss = computed(() =>
     ? played.value.reduce((sum, w) => sum + Math.abs((w.actual ?? 0) - (w.projected ?? 0)), 0) / played.value.length
     : null,
 )
+const hits = computed(() => hitRate(player.value?.weeks ?? []))
 const best = computed(() => Math.max(...(player.value?.weeks ?? []).map((w) => w.actual ?? -Infinity)))
 
 function deltaClass(w: PlayerWeek) {
@@ -118,7 +121,7 @@ function line(w: PlayerWeek): string {
           Fantasy points this season
         </StatTile>
         <StatTile label="Our avg miss" :value="avgMiss !== null ? `±${avgMiss.toFixed(1)}` : '–'">
-          Projection vs actual this season
+          Projection vs actual this season<template v-if="hits"> · {{ hits.hits }} of {{ hits.graded }} within 5</template>
         </StatTile>
       </div>
 
@@ -137,6 +140,7 @@ function line(w: PlayerWeek): string {
                 <th>Opponent</th>
                 <th class="text-right">Proj</th>
                 <th class="text-right">Actual</th>
+                <th class="text-center max-tab:px-1!" title="Within 5 points of the projection">Accurate</th>
                 <th class="max-tab:hidden">Stat line</th>
               </tr>
             </thead>
@@ -156,6 +160,9 @@ function line(w: PlayerWeek): string {
                 <td class="text-right">
                   <strong v-if="w.actual !== null" :class="deltaClass(w)">{{ points(w.actual) }}</strong>
                   <span v-else class="text-muted">{{ w.projected !== null ? 'Upcoming' : '–' }}</span>
+                </td>
+                <td class="text-center max-tab:px-1!">
+                  <GradeMark :projected="w.projected" :actual="w.actual" class="align-middle" />
                 </td>
                 <td class="text-[13px] text-muted max-tab:hidden">{{ line(w) }}</td>
               </tr>

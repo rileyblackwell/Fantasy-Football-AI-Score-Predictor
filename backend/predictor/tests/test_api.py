@@ -2,7 +2,7 @@ from django.test import TestCase, override_settings
 
 from predictor.models import Game, InjuryReport
 from predictor.pipeline import run_pipeline
-from predictor.views import bye_weeks
+from predictor.views import bye_weeks, within_5
 from predictor.tests.factories import populate_db
 
 
@@ -106,6 +106,16 @@ class AccuracyApiTests(TestCase):
         self.assertGreaterEqual(data["overall"]["mae"], 0)
         self.assertIn("DST", data["by_position"])
         self.assertLessEqual(len(data["biggest_misses"]), 5)
+        overall = data["overall"]
+        self.assertEqual(sum(w["hits"] for w in data["weeks"]), overall["hits"])
+        self.assertAlmostEqual(overall["within_5"], overall["hits"] / overall["games"], places=3)
+
+    def test_within_5_is_inclusive_and_compared_as_shown(self):
+        self.assertTrue(within_5(14.2, 17.0))
+        self.assertTrue(within_5(14.2, 9.2))
+        self.assertTrue(within_5(15.04, 10.0))  # shown as 15.0 vs 10.0
+        self.assertFalse(within_5(15.1, 10.0))
+        self.assertFalse(within_5(3.0, -2.1))
 
     def test_dst_player_detail_has_defense_line(self):
         data = self.client.get("/api/players/DST-AAA").json()

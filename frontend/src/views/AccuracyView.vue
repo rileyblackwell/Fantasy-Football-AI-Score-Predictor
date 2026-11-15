@@ -93,14 +93,18 @@ function inProgress(week: number) {
             :key="w.week"
             class="grid grid-cols-[48px_1fr_190px] items-center gap-3 max-tab:grid-cols-[40px_1fr]"
           >
-            <span class="font-display text-[16px] leading-tight font-bold">
+            <RouterLink
+              :to="{ path: '/', query: { week: `${data.season}-${w.week}` } }"
+              class="font-display text-[16px] leading-tight font-bold text-fg no-underline hover:text-accent"
+              :title="`See every Week ${w.week} projection with its check or cross`"
+            >
               Wk {{ w.week }}
               <span
                 v-if="inProgress(w.week)"
                 class="block font-sans text-[10px] font-bold tracking-[0.06em] text-accent uppercase"
                 >In progress</span
               >
-            </span>
+            </RouterLink>
             <span class="grid gap-[3px]" :class="{ 'opacity-60': inProgress(w.week) }">
               <span class="relative h-3.5 min-w-[2px] rounded-sm bg-bar" :style="{ width: `${(w.mae / maxWeekMae) * 82}%` }">
                 <span :class="barLabel" class="-top-0.5">±{{ w.mae.toFixed(2) }}</span>
@@ -116,7 +120,7 @@ function inProgress(week: number) {
             <span
               class="text-right text-[12.5px] text-muted tabular-nums max-tab:col-start-2 max-tab:-mt-1 max-tab:text-left"
               >{{ w.games }} games{{ inProgress(w.week) ? ' so far' : '' }} ·
-              {{ (w.within_5 * 100).toFixed(0) }}% within 5</span
+              {{ w.hits }} within 5 ({{ (w.within_5 * 100).toFixed(0) }}%)</span
             >
           </div>
         </div>

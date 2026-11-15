@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api, type PredictionRow } from '../lib/api'
 import { byeFlag, injuryClass, injuryShort, points, relativeTime, SCORING_NAMES } from '../lib/format'
+import { hitRate } from '../lib/grade'
 import { scoring } from '../lib/store'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
@@ -10,6 +11,7 @@ import PosChip from '../components/PosChip.vue'
 import TeamLogo from '../components/TeamLogo.vue'
 import PageHero from '../components/PageHero.vue'
 import StateMessage from '../components/StateMessage.vue'
+import GradeMark from '../components/GradeMark.vue'
 
 type SortKey = 'projected' | 'recent' | 'name' | 'team' | 'actual'
 const SORT_KEYS: SortKey[] = ['projected', 'recent', 'name', 'team', 'actual']
@@ -51,6 +53,10 @@ const current = computed(() => {
 })
 const isPastWeek = computed(() => !!targetKey.value && selectedWeek.value !== targetKey.value)
 const showActual = computed(() => rows.value.some((r) => r.actual !== null))
+// How many of this week's projections landed within 5 points of the real score.
+const weekHits = computed(() => hitRate(rows.value))
+// Weeks played before the site went live are graded against a backtest, not a projection shown at the time.
+const isBacktestWeek = computed(() => rows.value.length > 0 && rows.value.every((r) => r.is_backtest))
 
 const sorters: Record<SortKey, (a: PredictionRow, b: PredictionRow) => number> = {
   projected: (a, b) => b.projected - a.projected,
@@ -164,7 +170,13 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
         <span v-else :class="heroSkeleton" class="h-[0.75em] w-[1.1em]" aria-label="Loading week" />
         projections
       </template>
-      <p v-if="isPastWeek">This week is in the books. Here's what we projected next to what actually happened.</p>
+      <p v-if="isPastWeek">
+        This week is in the books. Here's what we projected next to what actually happened.
+        <template v-if="isBacktestWeek">
+          This week was played before the site went live, so it's graded on a backtest by a model that hadn't seen this
+          season.
+        </template>
+      </p>
       <p v-else>
         AI projections for every QB, RB, WR, TE and defense, rebuilt every morning with the latest stats, Vegas lines
         and injury reports.
@@ -180,7 +192,11 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
             </div>
             <div :class="statLabel">Players projected</div>
           </div>
-          <div v-if="summary?.model?.metrics?.model_mae">
+          <div v-if="isPastWeek && weekHits">
+            <div :class="statValue">{{ Math.round(weekHits.share * 100) }}%</div>
+            <div :class="statLabel">Accurate · {{ weekHits.hits }} of {{ weekHits.graded }}</div>
+          </div>
+          <div v-else-if="summary?.model?.metrics?.model_mae">
             <div :class="statValue">±{{ summary.model.metrics.model_mae.toFixed(1) }}</div>
             <div :class="statLabel">Avg miss, {{ summary.model.metrics.holdout_season }} test</div>
           </div>
@@ -298,6 +314,9 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <th class="text-right max-tab:hidden">Last 3 avg</th>
               <th class="text-right">Projected</th>
               <th v-if="showActual" class="text-right">Actual</th>
+              <th v-if="showActual" class="text-center max-tab:px-1!" title="Within 5 points of the projection">
+                Accurate
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -369,6 +388,9 @@ const heroSkeleton = 'inline-block animate-pulse rounded-md bg-white/15 align-mi
               <td v-if="showActual" class="text-right">
                 <span v-if="row.actual !== null" :class="[projection, diffClass(row)]">{{ points(row.actual) }}</span>
                 <span v-else class="text-muted">{{ isPastWeek ? 'DNP' : '–' }}</span>
+              </td>
+              <td v-if="showActual" class="text-center max-tab:px-1!">
+                <GradeMark :projected="row.projected" :actual="row.actual" class="align-middle" />
               </td>
             </tr>
           </tbody>

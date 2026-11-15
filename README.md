@@ -27,6 +27,10 @@ The original scraper and PyTorch notebook live in [`legacy/`](legacy/) for refer
    - trains the final model on everything and projects the next unplayed week for active rostered players.
 5. Projections published before kickoff are never overwritten, so the Scorecard page (`/api/accuracy`) grades what the site actually showed.
 6. Trained models are stored in Postgres (`ModelRun.boosters`), so nothing depends on the container's disk.
+7. The Trade Analyzer (`/api/rest-of-season`, `rest_of_season.py`) turns the upcoming week's projections into
+   rest-of-season totals at request time: each remaining game is the player's per-game rate adjusted for how many
+   points that opponent has allowed to the position this season, and bye weeks add nothing. No extra training or
+   stored data.
 
 ## Local development
 
