@@ -31,6 +31,8 @@ class Player(models.Model):
     team = models.CharField(max_length=4, blank=True, db_index=True)
     headshot_url = models.URLField(max_length=300, blank=True)
     roster_status = models.CharField(max_length=10, blank=True)
+    # ESPN's athlete id, from the nflverse players table: matches ESPN's live injury feed to our players.
+    espn_id = models.CharField(max_length=12, blank=True, db_index=True)
     # Career context for the model (empty for team defenses and players nflverse has no bio for).
     birth_date = models.DateField(null=True, blank=True)
     rookie_season = models.PositiveSmallIntegerField(null=True, blank=True)
@@ -47,6 +49,7 @@ class Game(models.Model):
     season = models.PositiveSmallIntegerField()
     week = models.PositiveSmallIntegerField()
     gameday = models.DateField(null=True)
+    kickoff = models.DateTimeField(null=True, blank=True, help_text="Scheduled kickoff (stored in UTC).")
     home_team = models.CharField(max_length=4)
     away_team = models.CharField(max_length=4)
     home_score = models.SmallIntegerField(null=True)

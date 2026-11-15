@@ -182,13 +182,24 @@ def clean_teams(raw: pd.DataFrame) -> pd.DataFrame:
     return df[["abbr", "name", "nickname", "color", "color2", "logo_url"]].fillna("").reset_index(drop=True)
 
 
+def kickoff_times(schedule: pd.DataFrame) -> pd.Series:
+    """Kickoff as a UTC timestamp. nflverse gives the date and an Eastern-time clock ("13:00")."""
+    if "gametime" not in schedule:
+        return pd.Series(pd.NaT, index=schedule.index, dtype="datetime64[ns, UTC]")
+    local = pd.to_datetime(
+        schedule["gameday"].astype(str) + " " + schedule["gametime"].astype(str), format="%Y-%m-%d %H:%M", errors="coerce"
+    )
+    return local.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT").dt.tz_convert("UTC")
+
+
 def clean_schedule(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw[raw["game_type"] == "REG"].copy()
     df["home_team"] = fix_team(df["home_team"])
     df["away_team"] = fix_team(df["away_team"])
+    df["kickoff"] = kickoff_times(df)
     df["gameday"] = pd.to_datetime(df["gameday"], errors="coerce").dt.date
     cols = [
-        "game_id", "season", "week", "gameday", "home_team", "away_team",
+        "game_id", "season", "week", "gameday", "kickoff", "home_team", "away_team",
         "home_score", "away_score", "spread_line", "total_line",
     ]
     return df[cols].reset_index(drop=True)
@@ -209,14 +220,18 @@ def clean_injuries(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_players(raw: pd.DataFrame) -> pd.DataFrame:
-    """Bio details from the nflverse players table: birth date, rookie season, draft slot and the
-    Pro Football Reference id (used to match snap counts)."""
+    """Bio details from the nflverse players table: birth date, rookie season, draft slot, the
+    Pro Football Reference id (used to match snap counts) and the ESPN id (used to match ESPN's
+    game-day injury feed)."""
     df = raw[raw["gsis_id"].notna()].drop_duplicates("gsis_id").copy()
     df["birth_date"] = pd.to_datetime(df["birth_date"], errors="coerce").dt.date
     for col in ["rookie_season", "draft_pick"]:
         df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+    if "espn_id" not in df:
+        df["espn_id"] = None
+    df["espn_id"] = df["espn_id"].map(lambda v: "" if pd.isna(v) else str(v).split(".")[0])
     return df.rename(columns={"gsis_id": "player_id", "pfr_id": "pfr_player_id"})[
-        ["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"]
+        ["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick", "espn_id"]
     ].reset_index(drop=True)
 
 
@@ -308,7 +323,7 @@ def load_players() -> pd.DataFrame:
         return clean_players(_nfl().load_players().to_pandas())
     except Exception:
         logger.warning("Player bios unavailable", exc_info=True)
-        return pd.DataFrame(columns=["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick"])
+        return pd.DataFrame(columns=["player_id", "pfr_player_id", "birth_date", "rookie_season", "draft_pick", "espn_id"])
 
 
 def load_snap_counts(seasons: list[int], players: pd.DataFrame) -> pd.DataFrame:
@@ -412,6 +427,7 @@ def store_schedule(schedule: pd.DataFrame) -> int:
             season=r.season,
             week=r.week,
             gameday=_none_if_nan(r.gameday),
+            kickoff=_none_if_nan(getattr(r, "kickoff", None)),
             home_team=r.home_team,
             away_team=r.away_team,
             home_score=_none_if_nan(r.home_score),
@@ -425,7 +441,7 @@ def store_schedule(schedule: pd.DataFrame) -> int:
         games,
         update_conflicts=True,
         unique_fields=["game_id"],
-        update_fields=["gameday", "home_score", "away_score", "spread_line", "total_line", "home_team", "away_team"],
+        update_fields=["gameday", "kickoff", "home_score", "away_score", "spread_line", "total_line", "home_team", "away_team"],
         batch_size=1000,
     )
     return len(games)
@@ -479,8 +495,10 @@ def store_player_bios(players: pd.DataFrame) -> int:
         player.birth_date = _none_if_nan(bio["birth_date"])
         player.rookie_season = None if pd.isna(bio["rookie_season"]) else int(bio["rookie_season"])
         player.draft_pick = None if pd.isna(bio["draft_pick"]) else int(bio["draft_pick"])
+        espn_id = bio.get("espn_id")
+        player.espn_id = espn_id if isinstance(espn_id, str) else ""
         objs.append(player)
-    Player.objects.bulk_update(objs, ["birth_date", "rookie_season", "draft_pick"], batch_size=1000)
+    Player.objects.bulk_update(objs, ["birth_date", "rookie_season", "draft_pick", "espn_id"], batch_size=1000)
     return len(objs)
 
 
