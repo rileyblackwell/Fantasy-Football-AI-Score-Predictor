@@ -6,6 +6,7 @@ import { byeFlag, injuryClass, injuryShort, points, SCORING_NAMES } from '../lib
 import { scoring } from '../lib/store'
 import { loadSummary, summary, summaryError, team } from '../lib/summary'
 import { MAX_PICKS, parsePicks, pickStatus, type PickStatus, recentGames, recommend } from '../lib/startSit'
+import { consistencyInfo, rangeBar } from '../lib/consistency'
 import PageHero from '../components/PageHero.vue'
 import PlayerAvatar from '../components/PlayerAvatar.vue'
 import PlayerPicker from '../components/PlayerPicker.vue'
@@ -41,6 +42,23 @@ const weekOptions = computed(() => {
 
 const byId = computed(() => new Map(rows.value.map((r) => [r.player_id, r])))
 
+// Score ranges share one axis (0 to the highest ceiling picked) so open ranges compare at a glance.
+const rangeScale = computed(() => Math.max(1, ...picks.value.map((id) => byId.value.get(id)?.ceiling ?? 0)))
+const openRanges = ref<string[]>([])
+
+function toggleRange(id: string) {
+  openRanges.value = openRanges.value.includes(id) ? openRanges.value.filter((p) => p !== id) : [...openRanges.value, id]
+}
+
+/** The consistency label and range bar for a projection, or null when it has no range. */
+function spread(row: PredictionRow | null) {
+  const info = row ? consistencyInfo(row) : null
+  if (!row || !info) return null
+  const floor = row.floor ?? 0
+  const ceiling = row.ceiling ?? 0
+  return { info, floor, ceiling, bar: rangeBar(floor, row.projected, ceiling, rangeScale.value) }
+}
+
 /** Each pick with this week's projection, or with only the player's details when they have no game. */
 const cards = computed(() =>
   picks.value.map((id) => {
@@ -52,6 +70,7 @@ const cards = computed(() =>
       detail,
       name: row?.name ?? detail?.name ?? 'Loading…',
       bye: row ? byeFlag(row.bye_week, current.value.week) : null,
+      spread: spread(row),
       recent: detail && detail.season === current.value.season ? recentGames(detail.weeks, current.value.week) : [],
     }
   }),
@@ -280,6 +299,72 @@ function badgeFor(id: string) {
                 class="mt-2 h-1.5 rounded-xs bg-bar"
                 :style="{ width: `${(card.row.projected / maxProjection) * 100}%` }"
               />
+              <template v-if="card.spread">
+                <button
+                  type="button"
+                  class="mt-3 inline-flex items-center gap-1.5 self-start rounded-full px-2.5 py-1 text-[12.5px] font-bold transition-opacity hover:opacity-85"
+                  :class="card.spread.info.tone"
+                  :aria-expanded="openRanges.includes(card.id)"
+                  :aria-controls="`range-${card.id}`"
+                  :title="card.spread.info.blurb"
+                  @click="toggleRange(card.id)"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    class="size-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path :d="card.spread.info.icon" />
+                  </svg>
+                  {{ card.spread.info.label }}
+                  <svg
+                    viewBox="0 0 24 24"
+                    class="size-3 opacity-70 transition-transform"
+                    :class="openRanges.includes(card.id) ? 'rotate-180' : ''"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+                <div
+                  v-if="openRanges.includes(card.id)"
+                  :id="`range-${card.id}`"
+                  class="mt-2 rounded-control bg-surface-2 px-3 py-2.5"
+                >
+                  <div :class="statLabel">Most weeks</div>
+                  <div class="font-display text-[22px] leading-tight font-bold tabular-nums">
+                    {{ points(card.spread.floor) }} to {{ points(card.spread.ceiling) }} pts
+                  </div>
+                  <div
+                    class="relative mt-2 h-2 rounded-full bg-surface-3"
+                    role="img"
+                    :aria-label="`Range ${points(card.spread.floor)} to ${points(card.spread.ceiling)}, projected ${points(card.row.projected)}`"
+                  >
+                    <div
+                      class="absolute inset-y-0 rounded-full bg-bar"
+                      :style="{ left: `${card.spread.bar.left}%`, width: `${card.spread.bar.width}%` }"
+                    />
+                    <div
+                      class="absolute -inset-y-1 w-[3px] -translate-x-1/2 rounded-full bg-fg"
+                      :style="{ left: `${card.spread.bar.marker}%` }"
+                    />
+                  </div>
+                  <p class="mt-2 mb-0 text-[12.5px] leading-snug text-muted">
+                    {{ card.spread.info.blurb }} About 8 weeks in 10 land in this range; the line marks the
+                    projection.
+                  </p>
+                </div>
+              </template>
               <div v-if="isPastWeek" class="mt-3 text-[14px]">
                 <span :class="statLabel">Actual</span>
                 <span

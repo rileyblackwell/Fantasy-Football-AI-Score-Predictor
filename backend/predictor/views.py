@@ -5,6 +5,7 @@ from django.http import FileResponse, Http404, JsonResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
+from .modeling import consistency
 from .models import POSITIONS, Game, InjuryReport, ModelRun, Player, Prediction, RefreshLog, Team, WeeklyStat
 
 SCORING = {"ppr": "points_ppr", "half": "points_half", "std": "points_std"}
@@ -29,6 +30,19 @@ def _default_week() -> tuple[int, int] | None:
         return run.metrics["target_season"], run.metrics["target_week"]
     latest = Prediction.objects.order_by("-season", "-week").values("season", "week").first()
     return (latest["season"], latest["week"]) if latest else None
+
+
+def _score_range(p: Prediction, scoring: str) -> dict:
+    """The projection's 10th-90th percentile range in this scoring format, and how swingy it is.
+
+    The label always comes from the PPR range, so it doesn't change when the scoring switch does.
+    """
+    floor, ceiling = getattr(p, f"floor_{scoring}"), getattr(p, f"ceiling_{scoring}")
+    return {
+        "floor": None if floor is None else round(floor, 1),
+        "ceiling": None if ceiling is None else round(ceiling, 1),
+        "consistency": consistency(p.points_ppr, p.floor_ppr, p.ceiling_ppr),
+    }
 
 
 def bye_weeks(season: int) -> dict[str, int]:
@@ -130,6 +144,7 @@ def predictions(request):
                 "is_home": p.is_home,
                 "headshot_url": p.player.headshot_url,
                 "projected": round(getattr(p, field), 1),
+                **_score_range(p, scoring),
                 "recent_avg_ppr": p.recent_avg_ppr,
                 "injury_status": inj.status if inj else None,
                 "injury": inj.injury if inj else None,
